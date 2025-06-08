@@ -1,22 +1,22 @@
 import torch.nn as nn
-from core.positional_encoding import SinusoidalPositionalEncoding, LearnablePositionalEncoding
+from transformer.core.positional_encoding import SinusoidalPositionalEncoding, LearnablePositionalEncoding
 import math
 
 class InputEmbedding(nn.Module):
     def __init__(self, vocab_size, d_model, max_len, dropout_rate, encoding_type='sinusoidal'):
         super().__init__()
-        self.token_embedding = nn.Embedding(vocab_size, d_model)
+        self.token_embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
 
         # chose desired positional encoding layer
         if encoding_type == 'sinusoidal':
-            self.positional_encoding = SinusoidalPositionalEncoding(d_model, max_len)
+            self.positional_encoding = SinusoidalPositionalEncoding(d_model=d_model, max_len=max_len)
         elif encoding_type == 'learnable':
-            self.positional_encoding = LearnablePositionalEncoding(d_model, max_len)
+            self.positional_encoding = LearnablePositionalEncoding(d_model=d_model, max_len=max_len)
         else:
             raise ValueError("Invalid encoding type selected")
 
         # dropout layer
-        self.dropout = nn.Dropout(dropout_rate)
+        self.dropout = nn.Dropout(p=dropout_rate)
 
         # scale for consistent sizing for the embeddings vs positional encoding
         self.scale = math.sqrt(d_model)

@@ -1,5 +1,5 @@
 import torch.nn as nn
-from core.multihead_attention import MultiHeadAttention
+from transformer.core.multihead_attention import MultiHeadAttention
 
 class TransformerEncoderBlock(nn.Module):
     # d_ff = dimension of the feedforward network's hidden layer
@@ -26,7 +26,7 @@ class TransformerEncoderBlock(nn.Module):
         self.dropout2 = nn.Dropout(dropout_rate)
 
     def forward(self, x, mask):
-        self_attention_output, _ = self.multi_attention(x, x, x, mask)
+        self_attention_output, _, _ = self.multi_attention(x, x, x, mask)
         x = self.norm1(x + self.dropout1(self_attention_output))
         
         # feed forward + residual connection

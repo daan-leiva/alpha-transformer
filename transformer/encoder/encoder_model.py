@@ -1,6 +1,6 @@
 import torch.nn as nn
-from core.input_embedding import InputEmbedding
-from encoder.transformer_encoder import TransformerEncoder
+from transformer.core.input_embedding import InputEmbedding
+from transformer.encoder.transformer_encoder import TransformerEncoder
 
 class TransformerEncoderModel(nn.Module):
     def __init__(self, vocab_size, d_model, n_heads, max_len, dropout_rate, encoding_type,
@@ -11,7 +11,7 @@ class TransformerEncoderModel(nn.Module):
                                               max_len = max_len, dropout_rate = dropout_rate,
                                               encoding_type = encoding_type)
         self.encoder_stack = TransformerEncoder(d_model = d_model, n_heads = n_heads,
-                                                d_encoder_ff = d_encoder_ff,
+                                                hidden_ff_d = hidden_ff_d,
                                                 num_encoder_layers = num_encoder_layers,
                                                 dropout_rate = dropout_rate)
         

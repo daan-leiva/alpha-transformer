@@ -36,7 +36,7 @@ class LearnablePositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=5000):
         super().__init__()
         # instead of a vocab size we are using the posibble positions as the first dimension
-        self.position_embedding = nn.Embedding(max_len, d_model)
+        self.position_embedding = nn.Embedding(num_embeddings=max_len, embedding_dim=d_model)
 
     def forward(self, x):
         batch_size, seq_len, _ = x.size()

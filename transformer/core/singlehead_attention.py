@@ -18,7 +18,6 @@ class SingleAttentionHead(nn.Module):
 
         # calcualte our attention matrix
         attention_matrix = torch.matmul(Q, K.transpose(-2, -1))/math.sqrt(d_k) # resulting dimensions = (batch_size, n_heads, seq_len, seq_len)
-
         # the mask will be used to partially hide inputs during training (look ahead)
         # and for variable input lengths
         if mask is not None:
@@ -33,6 +32,3 @@ class SingleAttentionHead(nn.Module):
         weighted_value_matrix = torch.matmul(weighted_attention_matrix, V)
 
         return weighted_value_matrix, weighted_attention_matrix
-
-
-        
