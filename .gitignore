@@ -110,3 +110,4 @@ gcp_keys/
 *.log
 *.tmp
 *.bak
+venv/
