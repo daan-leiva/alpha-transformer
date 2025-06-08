@@ -5,16 +5,14 @@ from datasets import load_dataset
 
 # provides data for training
 class TranslationDataset(Dataset):
-    def __init__(self, data, src_lang, tgt_lang, src_tokenizer,
-                    tgt_tokenizer, special_tokens,
-                    max_len=100):
+    def __init__(self, data, src_lang, tgt_lang, tokenizer,
+                 special_tokens, max_len=100):
         super().__init__()
         # dictionary of data
         self.data = data
         self.src_lang = src_lang
         self.tgt_lang = tgt_lang
-        self.src_tokenizer = src_tokenizer
-        self.tgt_tokenizer = tgt_tokenizer
+        self.tokenizer = tokenizer
         self.special_tokens = special_tokens
         self.max_len = max_len
 
@@ -35,8 +33,8 @@ class TranslationDataset(Dataset):
         sos_id = self.special_tokens['<sos>']
         eos_id = self.special_tokens['<eos>']
 
-        src_ids = [sos_id] + self.src_tokenizer.encode(src_text, out_type=int) + [eos_id]
-        tgt_ids = [sos_id] + self.tgt_tokenizer.encode(tgt_text, out_type=int) + [eos_id]
+        src_ids = [sos_id] + self.tokenizer.encode(src_text, out_type=int) + [eos_id]
+        tgt_ids = [sos_id] + self.tokenizer.encode(tgt_text, out_type=int) + [eos_id]
 
         return torch.tensor(src_ids[:self.max_len]), torch.tensor(tgt_ids[:self.max_len])
 
@@ -44,13 +42,12 @@ class TranslationDataset(Dataset):
 class TranslationData:
     def __init__(self, src_lang='en', tgt_lang='fr',
                  batch_size=32, max_len=100,
-                 src_tokenizer=None, tgt_tokenizer=None):
+                 tokenizer=None):
         self.src_lang = src_lang
         self.tgt_lang = tgt_lang
         self.batch_size = batch_size
         self.max_len = max_len
-        self.src_tokenizer = src_tokenizer
-        self.tgt_tokenizer = tgt_tokenizer
+        self.tokenizer = tokenizer
 
         self.special_tokens = {'<pad>': 3, '<sos>': 1, '<eos>': 2,
                                '<unk>': 0}
@@ -81,14 +78,14 @@ class TranslationData:
         
         # create datasets
         train_dataset = TranslationDataset(data=train_data, src_lang=self.src_lang, tgt_lang=self.tgt_lang,
-                                           src_tokenizer=self.src_tokenizer, tgt_tokenizer=self.tgt_tokenizer,
-                                           max_len=self.max_len)
+                                           tokenizer=self.tokenizer, max_len=self.max_len,
+                                           special_tokens=self.special_tokens)
         valid_dataset = TranslationDataset(data=valid_data, src_lang=self.src_lang, tgt_lang=self.tgt_lang,
-                                           src_tokenizer=self.src_tokenizer, tgt_tokenizer=self.tgt_tokenizer,
-                                           max_len=self.max_len)
+                                           tokenizer=self.tokenizer, max_len=self.max_len,
+                                           special_tokens=self.special_tokens)
         test_dataset = TranslationDataset(data=test_data, src_lang=self.src_lang, tgt_lang=self.tgt_lang,
-                                           src_tokenizer=self.src_tokenizer, tgt_tokenizer=self.tgt_tokenizer,
-                                           max_len=self.max_len)
+                                           tokenizer=self.tokenizer, max_len=self.max_len,
+                                           special_tokens=self.special_tokens)
         # create dataloaders
         self.train_dataloader = DataLoader(dataset=train_dataset, batch_size=self.batch_size,
                                       shuffle=True, collate_fn=self.collate_fn)

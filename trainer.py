@@ -4,22 +4,42 @@ import time
 from utils.early_stopping import EarlyStopping
 from tqdm import tqdm
 from utils.training_plotter import TrainingPlotter
-from utils.bleu_scorer import BLEUScorer
 import argparse
 import sentencepiece as spm
 
 class Trainer:
-    # different use cases
-    # Training requires: model, optimizer, scheduler, loss_fn, train_loader,
-    #                    val_loader, special_tokens,
-    #                    args, log_file
-    # Validation requires: model, loss_fn, val_loader,
-    #                      special_tokens, args, log_file
-    # Inference requires: model, special_tokens, args
+    # Different use cases and required arguments:
+    #
+    # Training requires:
+    #   - model
+    #   - optimizer
+    #   - scheduler
+    #   - loss_fn
+    #   - train_loader
+    #   - val_loader
+    #   - tokenizer (e.g., SentencePieceProcessor)
+    #   - special_tokens (dictionary with pad, sos, eos)
+    #   - args (Namespace or dict with training config)
+    #   - log_file (for logging training output)
+    #
+    # Validation requires:
+    #   - model
+    #   - loss_fn
+    #   - val_loader
+    #   - tokenizer
+    #   - special_tokens
+    #   - args
+    #   - log_file
+    #
+    # Inference requires:
+    #   - model
+    #   - tokenizer
+    #   - special_tokens
+    #   - args
 
-    def __init__(self, model, args=None, special_tokens=None, optimizer=None,
+    def __init__(self, model, tokenizer, args=None, special_tokens=None, optimizer=None,
                  scheduler=None, loss_fn=None, train_loader=None,
-                 val_loader=None, log_file=None, tokenizer=None):
+                 val_loader=None, log_file=None):
         self.model = model
         self.optimizer = optimizer
         self.scheduler = scheduler
@@ -28,7 +48,10 @@ class Trainer:
         self.valid_loader = val_loader
         self.tokenizer = tokenizer
         # create the bleu scorer using the tokenizer
-        self.bleu_scorer = BLEUScorer(tokenizer=self.tokenizer)
+        if special_tokens:
+            self.bleu_scorer = BLEUScorer(tokenizer=self.tokenizer,
+                                      eos_token_id=special_tokens['<eos>'],
+                                      pad_token_id=special_tokens['<pad>'])
         
         # check args type (could be dict or args)
         if isinstance(args, dict):
@@ -153,6 +176,10 @@ class Trainer:
         self.best_bleu_score = checkpoint['best_bleu_score']
         self.args = argparse.Namespace(**checkpoint['args'])
         self.special_tokens = checkpoint['special_tokens']
+        # create the bleu scorer based on the special_tokens
+        self.bleu_scorer = BLEUScorer(tokenizer=self.tokenizer,
+                                      eos_token_id=self.special_tokens['<eos>'],
+                                      pad_token_id=self.special_tokens['<pad>'])
     
     def log_and_print(self, message):
         print(message)
@@ -302,7 +329,7 @@ class Trainer:
         self.model.eval()
 
         with torch.no_grad():
-            for src_batch, tgt_batch in tqdm(self.valid_loader, desc=f"Epoch {self.current_epoch+1} [Validation]", leave=False):
+            for src_batch, tgt_batch in tqdm(self.valid_loader, desc=f" [Validation]", leave=False):
                 src_batch = src_batch.to(self.device)
                 tgt_batch = tgt_batch.to(self.device)
 

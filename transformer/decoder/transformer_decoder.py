@@ -9,14 +9,14 @@ class TransformerDecoder(nn.Module):
                                      for _ in range(num_decoder_layers)])
         self.norm = nn.LayerNorm(d_model)
 
-    def forward(self, x, encoder_output, target_mask=None, src_mask=None,
+    def forward(self, x, encoder_output, tgt_mask=None, src_mask=None,
                 past_key_values=None):
         updated_key_values = []
         for i, layer in enumerate(self.layers):
             past_key_value = None
             if past_key_values is not None:
                 past_key_value = past_key_values[i]
-            x, updated_key_value = layer(x, encoder_output, target_mask=target_mask,
+            x, updated_key_value = layer(x, encoder_output, tgt_mask=tgt_mask,
                       src_mask=src_mask, past_key_value=past_key_value)
             updated_key_values.append(updated_key_value)
         x = self.norm(x)

@@ -2,30 +2,34 @@ import sacrebleu
 import torch
         
 class BLEUScorer:
-    def __init__(self, tokenizer, pad_token_id=0, pad_token='<pad>', eos_token='<eos>'):
+    def __init__(self, tokenizer, eos_token_id, pad_token_id):
         self.pad_token_id = pad_token_id
-        self.pad_token = pad_token
-        self.eos_token = eos_token
+        self.eos_token_id = eos_token_id
         self.tokenizer = tokenizer
 
     # returns a list of decoded tokens
     def decode(self, ids):
-        tokens = []
-        for id in ids:
-            word = self.id2word.get(id.item(), '<unk>')
-            if word == self.eos_token:
-                break
-            if word != self.pad_token:
-                tokens.append(word)
-        return tokens
+        # convert if passed as tensor
+        ids = [token_id.item() if isinstance(token_id, torch.Tensor) else token_id for token_id in ids]
+        # remove padding
+        ids = [token_id for token_id in ids if token_id != self.pad_token_id]
+
+        # end at eos
+        if self.eos_token_id in ids:
+            ids = ids[:ids.index(self.eos_token_id)]
+
+        # decode into sentences
+        sentence = self.tokenizer.decode_ids(ids)
+
+        return sentence
     
     def get_predictions_and_references(self, output, tgt_output):
         # get the max id per probability distribution
         output = output.argmax(dim=-1)
 
         # get predictions and references
-        preds = [self.detokenize(self.decode(pred)) for pred in output]
-        refs = [self.detokenize(self.decode(ref)) for ref in tgt_output]
+        preds = [self.decode(pred) for pred in output]
+        refs = [self.decode(ref) for ref in tgt_output]
 
         return preds, refs
     

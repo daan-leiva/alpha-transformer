@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from torch import optim
 from transformer.transformer import Transformer
-from utils.bleu_scorer import BLEUScorer
 from data.translation_data import TranslationData
 import argparse
 import os
@@ -83,7 +82,7 @@ def main():
     trainer = Trainer(model=model, optimizer=optimizer, scheduler=scheduler,
                       loss_fn=loss_fn, train_loader=train_loader, val_loader=valid_loader,
                       args=args, log_file=log_file,
-                      special_tokens=data_module.special_tokens)
+                      special_tokens=data_module.special_tokens, tokenizer=sp_tokenizer)
     trainer.train()
     # save the final model
     trainer.save_checkpoint(path=f'{model_path}/final_model.pt')

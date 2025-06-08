@@ -1,0 +1,112 @@
+# --------------------------------------
+# Python
+# --------------------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --------------------------------------
+# Data files
+# --------------------------------------
+# Raw and processed datasets
+*.tok
+*.train
+*.valid
+*.test
+*.vocab
+*.spm
+*.bpe
+*.zip
+*.tar.gz
+*.tgz
+*.tar
+*.gz
+
+# Hugging Face datasets cache
+~/.cache/huggingface/
+~/.datasets_cache/
+~/.huggingface/
+
+# Hugging Face tokenizers
+*.json
+*.tokenizer
+
+# Dataset files (local)
+data/
+datasets/
+corpus/
+*.en
+*.de
+*.fr
+
+# Parquet or other large file formats
+*.parquet
+*.hdf5
+
+# --------------------------------------
+# Model files and checkpoints
+# --------------------------------------
+checkpoints/
+runs/
+logs/
+output/
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.onnx
+
+# SentencePiece models
+*.model
+*.vocab
+
+# BLEU evaluation outputs
+bleu_scores/
+*.sacrebleu
+*.bleu
+*.eval
+
+# TensorBoard logs
+logs/
+events.out.tfevents.*
+
+# --------------------------------------
+# Environment files
+# --------------------------------------
+.env
+.env.*
+.DS_Store
+
+# --------------------------------------
+# Cloud config files (optional)
+# --------------------------------------
+gcp_keys/
+*.json  # GCP service account keys
+
+# --------------------------------------
+# Miscellaneous
+# --------------------------------------
+*.log
+*.tmp
+*.bak

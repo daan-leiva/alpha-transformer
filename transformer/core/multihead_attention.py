@@ -23,7 +23,7 @@ class MultiHeadAttention(nn.Module):
     def forward(self, Q, K, V, mask=None, past_key_value=None):
         # get other x dimensions
         batch_size, src_seq_len, _ = K.shape # get them separate for the case of cross attention
-        batch_size, target_seq_len, _ = Q.shape
+        batch_size, tgt_seq_len, _ = Q.shape
 
         # project X into a bigger space for a later split
         Q = self.q_projection(Q)
@@ -31,7 +31,7 @@ class MultiHeadAttention(nn.Module):
         V = self.v_projection(V)
         # reshape for single attention
         # permute dimensions so we perform single attention per head instead of per sequence
-        Q = Q.reshape(batch_size, target_seq_len, self.n_heads, self.d_k).permute(0, 2, 1, 3)
+        Q = Q.reshape(batch_size, tgt_seq_len, self.n_heads, self.d_k).permute(0, 2, 1, 3)
         K = K.reshape(batch_size, src_seq_len, self.n_heads, self.d_k).permute(0, 2, 1, 3)
         V = V.reshape(batch_size, src_seq_len, self.n_heads, self.d_k).permute(0, 2, 1, 3)
 
@@ -54,7 +54,7 @@ class MultiHeadAttention(nn.Module):
         # switch the seq_len dimension back to the second position
         weighted_value_matrix = weighted_value_matrix.permute(0, 2, 1, 3)
         # combine n_heads and d_k into d_model
-        weighted_value_matrix = weighted_value_matrix.reshape(batch_size, target_seq_len, self.d_model)
+        weighted_value_matrix = weighted_value_matrix.reshape(batch_size, tgt_seq_len, self.d_model)
         # recombine the data through learned weights
         output = self.recombination(weighted_value_matrix)
 
