@@ -40,14 +40,14 @@ class TranslationDataset(Dataset):
 
 # handles the complete data pipeline
 class TranslationData:
-    def __init__(self, src_lang='en', tgt_lang='fr',
-                 batch_size=32, max_len=100,
-                 tokenizer=None):
+    def __init__(self, src_lang, tgt_lang, batch_size=32, max_len=100,
+                 tokenizer=None, small_subset=False):
         self.src_lang = src_lang
         self.tgt_lang = tgt_lang
         self.batch_size = batch_size
         self.max_len = max_len
         self.tokenizer = tokenizer
+        self.small_subset = small_subset
 
         self.special_tokens = {'<pad>': 3, '<sos>': 1, '<eos>': 2,
                                '<unk>': 0}
@@ -71,10 +71,21 @@ class TranslationData:
     
     def prepare_data(self):
         print('Loading dataset...')
-        dataset = load_dataset('iwslt2017', 'iwslt2017-en-fr', trust_remote_code=True)
+        if self.tgt_lang == 'fr':
+            dataset = load_dataset('iwslt2017', 'iwslt2017-en-fr', trust_remote_code=True)
+        elif self.tgt_lang == 'de':
+            dataset = load_dataset('wmt16', 'de-en')
+        else:
+            raise ValueError('Only fr and de target languages supported at the moment')
         train_data = dataset['train']
         valid_data = dataset['validation']
         test_data = dataset['test']
+
+        if self.small_subset:
+            print('Small subset mode enabled for faster training')
+            train_data = train_data.select(range(10000))  # first 10k samples
+            valid_data = valid_data.select(range(1000))
+            test_data = test_data.select(range(1000))
         
         # create datasets
         train_dataset = TranslationDataset(data=train_data, src_lang=self.src_lang, tgt_lang=self.tgt_lang,

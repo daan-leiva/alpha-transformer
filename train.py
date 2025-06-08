@@ -22,6 +22,9 @@ def parse_args():
     now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     parser.add_argument('--save_path', type=str, default=now_str)
     parser.add_argument('--max_len', type=int, default=100)
+    parser.add_argument('--src_lang', type=str, required=True, help='Source language (en)')
+    parser.add_argument('--tgt_lang', type=str, required=True, help='Target language (de, fr)')
+    parser.add_argument('--small_subset', type=bool)
     args = parser.parse_args()
     return args
 
@@ -45,8 +48,8 @@ def main():
     log_file_path = f'{model_path}/train_log.txt'
     log_file = open(log_file_path, 'w')
     # hyperparameters
-    src_lang = 'en'
-    tgt_lang = 'fr'
+    src_lang = args.src_lang
+    tgt_lang = args.tgt_lang
     d_model = args.d_model
     n_heads = args.n_heads
     num_layers = args.num_encoder_layers
@@ -55,7 +58,10 @@ def main():
     dropout_rate = args.dropout_rate
     # create sentence piece
     sp_tokenizer = spm.SentencePieceProcessor()
-    sp_tokenizer.load('data/spm.model')
+    if args.tgt_lang == 'fr':
+        sp_tokenizer.load('data/spm_en_fr.model')
+    elif args.tgt_lang == 'de':
+        sp_tokenizer.load('data/spm_en_de.model')
     vocab_size = sp_tokenizer.get_piece_size()
     # test for gpu
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -66,11 +72,16 @@ def main():
     # training parameters
     lr = args.learning_rate
     batch_size = args.batch_size
+    # set up small subset
+    if args.small_subset:
+        small_subset = True
+    else:
+        small_subset = False
     
     # prepare data
     data_module = TranslationData(src_lang=src_lang, tgt_lang=tgt_lang,
                                   batch_size=batch_size, max_len=max_len,
-                                  tokenizer=sp_tokenizer)
+                                  tokenizer=sp_tokenizer, small_subset=small_subset)
     data_module.prepare_data()
     # create training aids
     optimizer = optim.Adam(params=model.parameters(), lr=lr)
