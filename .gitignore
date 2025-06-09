@@ -59,6 +59,7 @@ corpus/
 *.en
 *.de
 *.fr
+*.all    # <--- Add this to ignore .all files
 
 # Parquet or other large file formats
 *.parquet
