@@ -13,8 +13,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Transformer Training Script')
     parser.add_argument('--d_model', type=int, default=256)
     parser.add_argument('--n_heads', type=int, default=4)
-    parser.add_argument('--num_encoder_layers', type=int, default=6)
-    parser.add_argument('--num_decoder_layers', type=int, default=6)
+    parser.add_argument('--num_layers', type=int, default=6)
     parser.add_argument('--dropout_rate', type=float, default=0.1)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--num_epochs', type=int, default=30)
@@ -24,7 +23,8 @@ def parse_args():
     parser.add_argument('--max_len', type=int, default=100)
     parser.add_argument('--src_lang', type=str, required=True, help='Source language (en)')
     parser.add_argument('--tgt_lang', type=str, required=True, help='Target language (de, fr)')
-    parser.add_argument('--small_subset', type=bool)
+    parser.add_argument('--sp_model_path', type=str, required=True, help='Path to SentencePiece model file (.model/.vocab)')
+    parser.add_argument('--small_subset', action='store_true', help='Use small subset for faster debugging')
     args = parser.parse_args()
     return args
 
@@ -47,24 +47,28 @@ def main():
     # create a log file path
     log_file_path = f'{model_path}/train_log.txt'
     log_file = open(log_file_path, 'w')
+
     # hyperparameters
     src_lang = args.src_lang
     tgt_lang = args.tgt_lang
     d_model = args.d_model
     n_heads = args.n_heads
-    num_layers = args.num_encoder_layers
+    num_layers = args.num_layers
     hidden_ff_d = d_model * 4
     max_len = args.max_len
     dropout_rate = args.dropout_rate
+
     # create sentence piece
     sp_tokenizer = spm.SentencePieceProcessor()
-    if args.tgt_lang == 'fr':
-        sp_tokenizer.load('data/spm_en_fr.model')
-    elif args.tgt_lang == 'de':
-        sp_tokenizer.load('data/spm_en_de.model')
+    sp_tokenizer.load(args.sp_model_path)
     vocab_size = sp_tokenizer.get_piece_size()
+    # verify that the target language matches the file
+    if args.tgt_lang not in args.sp_model_path:
+        raise ValueError("The target language must match the sp model")
+
     # test for gpu
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
     # create model
     model = create_model(vocab_size=vocab_size, d_model=d_model, n_heads=n_heads,
                          num_layers=num_layers, hidden_ff_d=hidden_ff_d,
@@ -72,16 +76,11 @@ def main():
     # training parameters
     lr = args.learning_rate
     batch_size = args.batch_size
-    # set up small subset
-    if args.small_subset:
-        small_subset = True
-    else:
-        small_subset = False
     
     # prepare data
     data_module = TranslationData(src_lang=src_lang, tgt_lang=tgt_lang,
                                   batch_size=batch_size, max_len=max_len,
-                                  tokenizer=sp_tokenizer, small_subset=small_subset)
+                                  tokenizer=sp_tokenizer, small_subset=args.small_subset)
     data_module.prepare_data()
     # create training aids
     optimizer = optim.Adam(params=model.parameters(), lr=lr)

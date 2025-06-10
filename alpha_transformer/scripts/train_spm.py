@@ -43,23 +43,32 @@ if __name__ == '__main__':
     parser.add_argument('--lang', type=str, required=True, help='Language pair (e.g., en-fr or en-de)')
     parser.add_argument('--vocab_size', type=int, default=32000, help='Vocabulary size')
     parser.add_argument('--model_type', type=str, default='bpe', choices=['bpe', 'unigram'], help='Model type: bpe or unigram')
+    parser.add_argument('--all_vocab_sizes', action='store_true', help='Train models with 8k, 16k, 32k vocab sizes')
 
     args = parser.parse_args()
     data_folder = 'data'
     if args.lang == 'en-fr':
         input_file = os.path.join(data_folder, 'train_en_fr.all')
-        model_prefix = os.path.join(data_folder, 'spm_en_fr') # saves as data/spm.model, data/spm.vocab
+        base_model_prefix = os.path.join(data_folder, 'spm_en_fr') # saves as data/spm.model, data/spm.vocab
     elif args.lang == 'en-de':
         input_file = os.path.join(data_folder, 'train_en_de.all')
-        model_prefix = os.path.join(data_folder, 'spm_en_de')
+        base_model_prefix = os.path.join(data_folder, 'spm_en_de')
     else:
         raise ValueError(f"Unsupported language pair: {args.lang}")
     
-    if args.vocab_size is None:
-        vocab_size = estimate_vocab_size(input_file)
-        print(f"Auto-detected vocab size: {vocab_size}")
+    # train for multiple vocab sizes
+    if args.all_vocab_sizes:
+        vocab_sizes = [8000, 16000, 32000]
+        for vocab_size in vocab_sizes:
+            model_prefix = f'{base_model_prefix}_{vocab_size//1000}k'
+            train_sentencepiece(input_file=input_file, model_prefix=model_prefix,
+                                vocab_size=vocab_size)
     else:
-        vocab_size = args.vocab_size
-
-    # Good size for local testing: 800
-    train_sentencepiece(input_file, model_prefix=model_prefix, vocab_size=args.vocab_size, model_type=args.model_type)
+        if args.vocab_size is None:
+            vocab_size = estimate_vocab_size(input_file)
+            print(f"Auto-detected vocab size: {vocab_size}")
+        else:
+            vocab_size = args.vocab_size
+        model_prefix=base_model_prefix
+        # Good size for local testing: 800
+        train_sentencepiece(input_file, model_prefix=model_prefix, vocab_size=args.vocab_size, model_type=args.model_type)
