@@ -143,9 +143,7 @@ class Trainer:
             parts.append(f"{minutes}m")
         parts.append(f"{seconds}s")  # always show seconds
 
-        return ' '.join(parts)
-    
-    
+        return ' '.join(parts)    
     
     def save_checkpoint(self, path):
         state = {
@@ -307,7 +305,7 @@ class Trainer:
                 self.save_checkpoint(path=f'{model_path}/checkpoint_epoch_{epoch}.pt')
             # check for early stopping
             if early_stopping.step(metric=bleu_score):
-                self.log_and_print("Early Stopped", log_file=self.log_file)
+                self.log_and_print("Early Stopped", message=self.log_file)
                 break
 
             self.scheduler.step()
@@ -346,13 +344,16 @@ class Trainer:
 
         return val_loss, bleu_score
     
-    def infer(self, src, type='beam'):
+    def infer(self, src, type='beam', beam_size=None):
         # greedly get sequence ids
         self.model.eval()
         if type == 'greedy':
-            generated_sequences = self.greedy_decode(src, )
+            generated_sequences = self.greedy_decode(src)
         elif type == 'beam':
-            generated_sequences = self.beam_search_decode(src)
+            if beam_size:
+                generated_sequences = self.beam_search_decode(src, beam_size=beam_size)
+            else:
+                generated_sequences = self.beam_search_decode(src)
         else:
             raise ValueError("Inference type can only be greedy or beam")
         # get the sentences in text

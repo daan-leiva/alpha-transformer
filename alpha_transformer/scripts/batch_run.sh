@@ -15,7 +15,7 @@ do
 
     for vocab_size in 8k 16k 32k
     do
-        SAVE_PATH="en_fr_${size}_d${d_model}_v${vocab_size}_${DATESTAMP}"
+        SAVE_PATH="/en_fr_run1/en_fr_${size}_d${d_model}_v${vocab_size}_${DATESTAMP}"
         echo "Running $size model with vocab $vocab_size..."
 
         python3 train.py \
@@ -30,6 +30,6 @@ do
             --src_lang en \
             --tgt_lang fr \
             --sp_model_path data/spm_en_fr_${vocab_size}.model \
-            --save_path $SAVE_PATH \
+            --save_path $SAVE_PATH
     done
 done
