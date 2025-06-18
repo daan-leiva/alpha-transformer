@@ -45,12 +45,21 @@ class Transformer(nn.Module):
         return encoder_output
     
     def decode(self, tgt, encoder_output, src_mask=None, tgt_mask=None,
-               past_key_values=None):
+               past_key_values=None, return_attention=False):
         # tgt: (batch_size, tgt_len)
         # tgt_mask: (batch_size, 1, tgt_len, tgt_len)
-        decoder_output, updated_past_key_values = self.decoder(
-                            x=tgt, encoder_output=encoder_output,
-                            tgt_mask=tgt_mask, src_mask=src_mask,
-                            past_key_values=past_key_values)
-         
-        return decoder_output, updated_past_key_values
+        if return_attention:
+            decoder_output, updated_past_key_values, cross_attention = self.decoder(
+                x=tgt, encoder_output=encoder_output,
+                tgt_mask=tgt_mask, src_mask=src_mask,
+                past_key_values=past_key_values,
+                return_attention=return_attention
+            )
+            return decoder_output, updated_past_key_values, cross_attention
+        else:
+            decoder_output, updated_past_key_values = self.decoder(
+                                x=tgt, encoder_output=encoder_output,
+                                tgt_mask=tgt_mask, src_mask=src_mask,
+                                past_key_values=past_key_values)
+            
+            return decoder_output, updated_past_key_values

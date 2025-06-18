@@ -15,7 +15,7 @@ do
 
     for vocab_size in 8k 16k 32k
     do
-        SAVE_PATH="/en_fr_run1/en_fr_${size}_d${d_model}_v${vocab_size}_${DATESTAMP}"
+        SAVE_PATH="/en_de_run1/en_de_${size}_d${d_model}_v${vocab_size}_${DATESTAMP}"
         echo "Running $size model with vocab $vocab_size..."
 
         python3 train.py \
@@ -28,8 +28,9 @@ do
             --learning_rate 1e-4 \
             --max_len 100 \
             --src_lang en \
-            --tgt_lang fr \
-            --sp_model_path data/spm_en_fr_${vocab_size}.model \
-            --save_path $SAVE_PATH
+            --tgt_lang de \
+            --sp_model_path data/spm_en_de_${vocab_size}.model \
+            --save_path $SAVE_PATH \
+            --label_smoothing
     done
 done

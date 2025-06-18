@@ -32,7 +32,7 @@ class TransformerDecoderBlock(nn.Module):
     # (a subset of the seq_len)
     # src_len = the the length of the encoder sequence length
     def forward(self, x, encoder_output, tgt_mask=None, src_mask=None,
-                past_key_value=None):
+                past_key_value=None, return_attention=False):
         # self attention block + residual connection
         self_attention_output, _, new_past_key_value = self.self_attention(Q=x, K=x, V=x,
                                                        mask=tgt_mask,
@@ -40,11 +40,15 @@ class TransformerDecoderBlock(nn.Module):
         x = self.norm1(x + self.dropout1(self_attention_output))
 
         # cross attention block + residual connection
-        cross_attention_matrix, _, _ = self.cross_attention(Q=x, K=encoder_output, V=encoder_output, mask=src_mask)
+        cross_attention_matrix, weighted_attention_matrix, _ = self.cross_attention(Q=x, K=encoder_output,
+                                                                                    V=encoder_output, mask=src_mask)
         x = self.norm2(x + self.dropout2(cross_attention_matrix))
 
         # feedforward + residual
         ff_out = self.feedforward(x)
         x = self.norm3(x + self.dropout3(ff_out))
 
-        return x, new_past_key_value
+        if return_attention:
+            return x, new_past_key_value, weighted_attention_matrix
+        else:
+            return x, new_past_key_value

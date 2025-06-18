@@ -86,6 +86,14 @@ class Trainer:
     # src shape : (batch_size, src_len)
     @staticmethod
     def create_src_mask(src, pad_token_id):
+         # Ensure input is a torch.Tensor
+        if not isinstance(src, torch.Tensor):
+            raise TypeError(f"Expected src to be a torch.Tensor, but got {type(src)}")
+
+        # Ensure src is 2-dimensional: (batch_size, src_len)
+        if src.ndim != 2:
+            raise ValueError(f"Expected src to have 2 dimensions (batch_size, src_len), but got shape {src.shape}")
+
         return (src !=pad_token_id).unsqueeze(1).unsqueeze(1) # (batch_size,1,1,src_len) [broadcasting shape]
 
     # creata a padding mask for the target data
@@ -93,6 +101,19 @@ class Trainer:
     # tgt shape : (batch_size, targtet_len)
     @staticmethod
     def create_tgt_mask(tgt, pad_token_id):
+        # Check that tgt is a tensor
+        if not isinstance(tgt, torch.Tensor):
+            raise TypeError(f"Expected tgt to be a torch.Tensor, but got {type(tgt)}")
+
+        # Check that tgt has 2 dimensions: (batch_size, tgt_len)
+        if tgt.dim() != 2:
+            raise ValueError(f"Expected tgt to have 2 dimensions (batch_size, tgt_len), but got shape {tgt.shape}")
+
+        # Ensure pad_token_id is an integer
+        if not isinstance(pad_token_id, int):
+            raise TypeError(f"pad_token_id should be an integer, but got {type(pad_token_id)}")
+        
+        # process mask
         tgt_len = tgt.shape[1]
         causal_mask = torch.tril(torch.ones(tgt_len, tgt_len)).bool().to(tgt.device).unsqueeze(0).unsqueeze(0) # (tgt_len, tgt_len)
         padding_mask = (tgt!=pad_token_id).unsqueeze(1).unsqueeze(1) # (batch_size, 1, 1, tgt_len)
@@ -254,7 +275,7 @@ class Trainer:
             self.log_and_print("Please set all of the variables if training. Operation canceled")
             return
         # helper objects
-        early_stopping = EarlyStopping(patience=3, min_delta=0.1, mode='max')
+        early_stopping = EarlyStopping(patience=9, min_delta=0.1, mode='max')
         epochs = self.args.num_epochs
         model_path = f'./checkpoints/{self.args.save_path}'
         # train loop
@@ -305,7 +326,7 @@ class Trainer:
                 self.save_checkpoint(path=f'{model_path}/checkpoint_epoch_{epoch}.pt')
             # check for early stopping
             if early_stopping.step(metric=bleu_score):
-                self.log_and_print("Early Stopped", message=self.log_file)
+                self.log_and_print("Early Stopped")
                 break
 
             self.scheduler.step()
@@ -344,22 +365,45 @@ class Trainer:
 
         return val_loss, bleu_score
     
-    def infer(self, src, type='beam', beam_size=None):
+    # expects a torch tensor as an input
+    def infer(self, src, decode_type='beam', beam_size=None, return_attention=False):
+        # === Input Checks ===
+        if not torch.is_tensor(src):
+            raise TypeError(f"`src` must be a torch.Tensor, got {type(src)}")
+        if src.ndim != 2:
+            raise ValueError(f"`src` must be a 2D tensor (batch_size, seq_len), got shape {src.shape}")
+        if decode_type not in ['beam', 'greedy']:
+            raise ValueError(f"`decode_type` must be either 'beam' or 'greedy', got {decode_type}")
+        if beam_size is not None and (not isinstance(beam_size, int) or beam_size <= 0):
+            raise ValueError(f"`beam_size` must be a positive integer, got {beam_size}")
+        
         # greedly get sequence ids
         self.model.eval()
-        if type == 'greedy':
-            generated_sequences = self.greedy_decode(src)
-        elif type == 'beam':
-            if beam_size:
-                generated_sequences = self.beam_search_decode(src, beam_size=beam_size)
+        if decode_type == 'greedy':
+            if return_attention:
+                generated_sequences, final_attn = self.greedy_decode(src, return_attention=return_attention)
             else:
-                generated_sequences = self.beam_search_decode(src)
+                generated_sequences =  self.greedy_decode(src)
+        elif decode_type == 'beam':
+            if return_attention:
+                if beam_size:
+                    generated_sequences, final_attn = self.beam_search_decode(src, beam_size=beam_size, return_attention=return_attention)
+                    
+                else:
+                    generated_sequences, final_attn = self.beam_search_decode(src, return_attention=return_attention)
+            else:
+                if beam_size:
+                    generated_sequences = self.beam_search_decode(src, beam_size=beam_size)
+                else:
+                    generated_sequences= self.beam_search_decode(src)
         else:
-            raise ValueError("Inference type can only be greedy or beam")
+            raise ValueError("Inference decode_type can only be greedy or beam")
         # get the sentences in text
         decoded_sentences = self.decode_ids(id_sequences=generated_sequences)
-
-        return decoded_sentences
+        if return_attention:
+            return decoded_sentences, generated_sequences, final_attn
+        else:
+            return decoded_sentences, generated_sequences
 
     def decode_ids(self, id_sequences, sos_token='<sos>', eos_token='<eos>', pad_token='<pad>'):
         # check if the sequences are tensor type
@@ -434,7 +478,15 @@ class Trainer:
 
         return generated
     
-    def greedy_decode(self, src):
+    # expects a torch tensor as an input
+    def greedy_decode(self, src, return_attention=False, debug_mode=False):
+        # === Input validation ===
+        if not torch.is_tensor(src):
+            raise TypeError(f"`src` must be a torch.Tensor, got {type(src)}")
+        if src.ndim != 2:
+            raise ValueError(f"`src` must be a 2D tensor of shape (batch_size, seq_len), got {src.shape}")
+        
+        # needed variables
         src = src.to(self.device)
         batch_size = src.size(0)
         sos_token_id = self.special_tokens['<sos>']
@@ -449,10 +501,13 @@ class Trainer:
         # will be none for the first token
         past_key_values = None
 
+        # create an attention matrix if needed
+        attention_matrices = [] if return_attention else None
+
         with torch.no_grad():
             # get the encoder output to be reused
             memory = self.model.encode(src=src, src_mask=src_mask)
-            # start with the <sos> token for each sentene in the batch
+            # start with the <sos> token for each sentence in the batch
             generated = torch.full((batch_size, 1), fill_value=sos_token_id,
                                 dtype=torch.long, device=self.device)
             # to keep track of finished sequences
@@ -463,8 +518,14 @@ class Trainer:
                 decoder_input = generated[:, -1:]
                 # predict logits
                 # shape (batch_size, seq_len, vocab_size)
-                decoder_output, past_key_values = self.model.decode(tgt=decoder_input, encoder_output=memory,
-                                             src_mask=src_mask, past_key_values=past_key_values)
+                result = self.model.decode(tgt=decoder_input, encoder_output=memory,
+                                           src_mask=src_mask, past_key_values=past_key_values,
+                                           return_attention=return_attention)
+                if return_attention:
+                    decoder_output, past_key_values, cross_attention = result
+                    attention_matrices.append(cross_attention)
+                else:
+                    decoder_output, past_key_values = result
                 vocab_logits = self.model.vocab_projection(decoder_output)
                 
                 # take the last value of the sequence so far
@@ -486,8 +547,23 @@ class Trainer:
                 # break out of the loop if all done
                 if finished.all():
                     break
+         # Convert generated tensor to list of lists of ints
+        generated_sequences = [seq.tolist() for seq in generated]
 
-        return generated
+        if return_attention:
+            if debug_mode:
+                print("attn shape before stack: ", len(attention_matrices), ', ', attention_matrices[0].shape)
+            # attention shape before processing:
+            # len() = steps  tensor_shape = (num_layers, batch_size, num_heads, 1, src_len)
+            attention_tensor = torch.stack(attention_matrices, dim=0)
+            # after stack the shape is (steps|tgt_len, num_layers, batch_size, num_heads, 1, src_len)
+            # squeeze singleton out
+            attention_tensor = attention_tensor.squeeze(4)
+            # Final shape after permute: (tgt_len, num_layers, batch_size, num_heads, src_len)
+            attention_tensor = attention_tensor.permute(2, 1, 3, 0, 4)
+            return generated_sequences, attention_tensor
+
+        return generated_sequences
     
     def reorder_past_key_values(self, past_key_values, beam_indices):
         new_past = []
@@ -504,8 +580,18 @@ class Trainer:
         return new_past
 
     
+    # expects a torch tensor as an input
     @torch.no_grad()
-    def beam_search_decode(self, src, beam_size=5, length_penalty_alpha=0.7):
+    def beam_search_decode(self, src, beam_size=5, length_penalty_alpha=2,
+                           repetition_penalty=20,
+                           return_attention=False, debug_mode=False):
+        # === Input validation ===
+        if not torch.is_tensor(src):
+            raise TypeError(f"`src` must be a torch.Tensor, got {type(src)}")
+        if src.ndim != 2:
+            raise ValueError(f"`src` must be a 2D tensor of shape (batch_size, seq_len), got {src.shape}")
+        
+        # useful variables
         src = src.to(self.device)
         batch_size = src.size(0)
 
@@ -516,6 +602,9 @@ class Trainer:
 
         # prepare src
         src_mask = self.create_src_mask(src, pad_token_id=pad_token_id)
+        if debug_mode:
+            print("Src shape: ", src_mask.shape)
+            print_done = False
         memory = self.model.encode(src, src_mask=src_mask)
 
         # repeat for each beam
@@ -538,6 +627,10 @@ class Trainer:
         # caching for key values
         past_key_values = None
 
+        # create an attention matrix if needed
+        if return_attention:
+            all_cross_attn = []
+
         # iterate through the length (or until all sequences are done)
         for step in range(max_len):
             # decode the last token (since we are using cashing)
@@ -545,12 +638,26 @@ class Trainer:
 
             # don't need a source mask since only one value is being
             # passed at a time
-            decoder_output, past_key_values = self.model.decode(
-                tgt=decoder_input, encoder_output=memory,
-                src_mask=src_mask,
-                tgt_mask=None,
-                past_key_values=past_key_values
-            )
+            if return_attention:
+                decoder_output, past_key_values, cross_attention = self.model.decode(
+                    tgt=decoder_input, encoder_output=memory,
+                    src_mask=src_mask,
+                    tgt_mask=None,
+                    past_key_values=past_key_values,
+                    return_attention=return_attention
+                )
+                if debug_mode:
+                    if not print_done:
+                        print("Cross attention shape: ", cross_attention.shape)
+                        print_done = True
+                all_cross_attn.append(cross_attention)
+            else:
+                decoder_output, past_key_values = self.model.decode(
+                    tgt=decoder_input, encoder_output=memory,
+                    src_mask=src_mask,
+                    tgt_mask=None,
+                    past_key_values=past_key_values
+                )
 
             vocab_logits = self.model.vocab_projection(decoder_output)
 
@@ -559,6 +666,15 @@ class Trainer:
 
             # get log probs (for numerically stability)
             next_token_log_probs = torch.log_softmax(current_step_logits, dim=-1)
+
+            # Apply repetition penalty
+            if repetition_penalty != 1.0:
+                for i in range(next_token_log_probs.size(0)):
+                    for token in set(generated_sequences[i].tolist()):
+                        if next_token_log_probs[i, token] < 0:
+                            next_token_log_probs[i, token] *= repetition_penalty
+                        else:
+                            next_token_log_probs[i, token] /= repetition_penalty
 
             # add precious beam scores (expand to broadcast)
             # next_token_log_probs shape (batch_size * beam_size, vocab_size)
@@ -589,6 +705,13 @@ class Trainer:
             # gather and update sequences
             # extract the selected beams
             generated_sequences = generated_sequences[flat_selected_beam_indices]
+
+            # mask out finished beams: once EOS is generated, force pad token
+            flat_is_finished = is_beam_finished.view(-1)
+            selected_token_ids = selected_token_ids.view(-1)
+
+            # append next token
+            selected_token_ids[flat_is_finished] = pad_token_id
             generated_sequences = torch.cat(
                 [generated_sequences, selected_token_ids.view(-1, 1)], dim=-1
             )
@@ -597,6 +720,16 @@ class Trainer:
             if past_key_values is not None:
                 past_key_values = self.reorder_past_key_values(past_key_values=past_key_values,
                                                               beam_indices=flat_selected_beam_indices)
+
+            # update attention matrix if needed
+            if return_attention:
+                # reorder the current attention matrix to match the beam order
+                reordered_cross_attn = []
+                for layer_attn in cross_attention:
+                    reordered_layer = layer_attn[flat_selected_beam_indices]
+                    reordered_cross_attn.append(reordered_layer)
+                # replace current attention matrx
+                all_cross_attn[-1] = reordered_cross_attn  
                 
             # update beam scores
             beam_log_probs = topk_log_probs.view(-1)
@@ -609,6 +742,9 @@ class Trainer:
             # early stopping if all beams are done
             if is_beam_finished.all():
                 break
+        
+        if debug_mode:
+            print("Final step count: ", step)
 
         # reshape back to (batch_size, beam_size, seq_len)
         generated_sequences = generated_sequences.view(batch_size, beam_size, -1)
@@ -619,6 +755,11 @@ class Trainer:
         sequence_lengths = (generated_sequences != pad_token_id).sum(dim=-1).float()
         # reshape beam log probabiliies to (batch_size, beam_size)
         normalized_scores = beam_log_probs.view(batch_size, beam_size) / ((sequence_lengths ** length_penalty_alpha))
+        if debug_mode:
+            print("Raw beam log probs:", beam_log_probs.view(batch_size, beam_size))
+            print("Sequence lengths:", sequence_lengths)
+            print("Normalized scores:", normalized_scores)
+
 
         # select the beat beam
         best_beam_idx = normalized_scores.argmax(dim=-1)
@@ -628,5 +769,50 @@ class Trainer:
         for i in range(batch_size):
             best_seq = generated_sequences[i, best_beam_idx[i]].tolist()
             best_sequences.append(best_seq)
+
+        # Truncate at first </s> and strip pads before it
+        truncated_sequences = []
+        for seq in best_sequences:
+            try:
+                eos_idx = seq.index(eos_token_id)
+            except ValueError:
+                eos_idx = len(seq)
+            cleaned_seq = [tok for tok in seq[:eos_idx+1] if tok != pad_token_id]
+            truncated_sequences.append(cleaned_seq)
+        best_sequences = truncated_sequences
+
+        if return_attention:
+            # Transpose: Convert from list[tgt_len] of list[num_layers] → list[num_layers] of list[tgt_len]
+            # This groups attention matrices by layer instead of by time step
+            if debug_mode:
+                print('Attention shape before going in: ', len(all_cross_attn), ', ',
+                      len(all_cross_attn[0]), ', ', all_cross_attn[0][0].shape)
+            layerwise = list(zip(*all_cross_attn))
+
+            # For each layer, concatenate attention matrices across time steps
+            # Each `layer` is a list of tensors of shape (num_heads, batch*beam, 1, src_len) — one per time step
+            # Resulting tensor shape: (batch*beam, num_heads, tgt_len, src_len) for each layer
+            stacked = [torch.cat(layer, dim=2) for layer in layerwise]
+            if debug_mode:
+                print('Stacked dimension: ', len(stacked), ', ', stacked[0].shape)
+
+            # Stack all layers into a single tensor
+            # Shape: (num_layers, batch*beam, num_heads, tgt_len, src_len)
+            cross_attn_all_layers = torch.stack(stacked, dim=0)
+
+            # Compute flat indices for the best beam in each batch
+            # This is needed to extract the attention maps for just the best hypotheses
+            selected_indices = (best_beam_idx + batch_beam_offset).tolist()
+
+            # Index into the stacked attention to get just the best beam for each batch
+            # Final shape: (num_layers, batch_size, num_heads, tgt_len, src_len)
+            final_attn = cross_attn_all_layers[:, selected_indices, :, :, :]
+
+            # reorder to have batch first
+            final_attn = final_attn.permute(1, 0, 2, 3, 4)
+            if debug_mode:
+                print("final_attn.shape =", final_attn.shape)
+
+            return best_sequences, final_attn
 
         return best_sequences

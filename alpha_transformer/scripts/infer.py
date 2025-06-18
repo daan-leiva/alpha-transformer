@@ -26,7 +26,7 @@ def load_checkpoint_and_tokenizer(checkpoint_path):
                          max_len=args.max_len,
                          dropout_rate=args.dropout_rate,
                          hidden_ff_d=args.d_model*4,
-                         encoding_type='sinusoidal'
+                         encoding_type=args.encoding_type,
                          ).to(device = torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
 
     # create an empty Trainer
@@ -37,16 +37,64 @@ def load_checkpoint_and_tokenizer(checkpoint_path):
 
     return trainer
 
-def translate_sentences(trainer, sentences, decode_type, beam_size):
+def translate_sentences_non_batched(trainer, sentences, decode_type, beam_size, return_attention=False):
     results = []
+    input_tokens = []
+    output_tokens = []
+    attentions = []
     for sentence in sentences:
         token_ids = trainer.tokenizer.encode(sentence, out_type=int)
+        input_tokens.append([trainer.tokenizer.IdToPiece(id) for id in token_ids])
         input_tensor = torch.tensor(token_ids).unsqueeze(0)  # batch size 1
         # move to same device
         input_tensor = input_tensor.to(trainer.device)
-        decoded_sentence = trainer.infer(input_tensor, type = decode_type, beam_size=beam_size)
+        if return_attention:
+            decoded_sentence, output_ids, cross_attention = trainer.infer(input_tensor, decode_type = decode_type,
+                                                     beam_size=beam_size, return_attention=return_attention)
+            attentions.append(cross_attention)
+        else:
+            decoded_sentence, output_ids = trainer.infer(input_tensor, decode_type = decode_type,
+                                                     beam_size=beam_size)
+        # check if the returned type is a list of lists
+        if isinstance(output_ids[0], list):
+            output_ids = output_ids[0]
+        output_tokens.append([trainer.tokenizer.IdToPiece(id) for id in output_ids])
         results.append(decoded_sentence)
-    return results
+    return results, input_tokens, output_tokens, attentions
+
+
+def translate_sentences(trainer, sentences, decode_type, beam_size, return_attention=False):
+     # Ensure sentences is a list
+    if isinstance(sentences, str):
+        sentences = [sentences]
+
+    # Tokenize all sentences
+    token_batches = [trainer.tokenizer.encode(s, out_type=int) for s in sentences]
+    input_tokens = [[trainer.tokenizer.IdToPiece(id) for id in seq] for seq in token_batches]
+
+    # Convert to tensor
+    input_tensor = torch.nn.utils.rnn.pad_sequence(
+        [torch.tensor(seq, dtype=torch.long) for seq in token_batches],
+        batch_first=True,
+        padding_value=trainer.special_tokens['<pad>']
+    ).to(trainer.device)
+
+    # Run inference on the batch
+    if return_attention:
+        results, output_ids, attentions = trainer.infer(
+            input_tensor, decode_type=decode_type, beam_size=beam_size, return_attention=True
+        )
+    else:
+        results, output_ids = trainer.infer(
+            input_tensor, decode_type=decode_type, beam_size=beam_size, return_attention=False
+        )
+        attentions = None
+
+    # Decode output token IDs to strings
+    output_tokens = [[trainer.tokenizer.IdToPiece(id) for id in seq] for seq in output_ids]
+
+    return results, input_tokens, output_tokens, attentions
+
 
 def main():
     parser = argparse.ArgumentParser(description="Run inference using a trained Transformer model.")
@@ -72,7 +120,7 @@ def main():
         with open(args.input_file, 'r', encoding='utf-8') as f:
             sentences = [line.strip() for line in f if line.strip()]
 
-    translations = translate_sentences(trainer=trainer, sentences=sentences,
+    translations, _, _, _ = translate_sentences(trainer=trainer, sentences=sentences,
                                        decode_type=args.decode_type,
                                        beam_size=args.beam_size)
     

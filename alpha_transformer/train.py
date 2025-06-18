@@ -3,6 +3,8 @@ import torch.nn as nn
 from torch import optim
 from transformer.transformer import Transformer
 from data.translation_data import TranslationData
+from transformer.label_smoothing_loss import LabelSmoothingLoss
+from transformer.warm_up_inverse_scheduler import WarmupInverseSquareRootScheduler
 import argparse
 import os
 import datetime
@@ -20,11 +22,14 @@ def parse_args():
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     parser.add_argument('--save_path', type=str, default=now_str)
+    parser.add_argument('--encoding_type', type=str, default='learnable')
     parser.add_argument('--max_len', type=int, default=100)
     parser.add_argument('--src_lang', type=str, required=True, help='Source language (en)')
     parser.add_argument('--tgt_lang', type=str, required=True, help='Target language (de, fr)')
     parser.add_argument('--sp_model_path', type=str, required=True, help='Path to SentencePiece model file (.model/.vocab)')
     parser.add_argument('--small_subset', action='store_true', help='Use small subset for faster debugging')
+    parser.add_argument('--label_smoothing', action='store_true', help='If true use label smoothing instead')
+    parser.add_argument('--warmup_scheduler', action='store_true', help='if true it uses the warm up inverse scheduler')
     args = parser.parse_args()
     return args
 
@@ -57,6 +62,10 @@ def main():
     hidden_ff_d = d_model * 4
     max_len = args.max_len
     dropout_rate = args.dropout_rate
+    encoding_type = args.encoding_type
+    # verify that it's value is sinusoidal or learnable
+    if encoding_type not in ['sinusoidal', 'learnable']:
+        raise ValueError("Encoding type can only be sinusoidal or learnable")
 
     # create sentence piece
     sp_tokenizer = spm.SentencePieceProcessor()
@@ -72,7 +81,7 @@ def main():
     # create model
     model = create_model(vocab_size=vocab_size, d_model=d_model, n_heads=n_heads,
                          num_layers=num_layers, hidden_ff_d=hidden_ff_d,
-                         max_len=max_len, dropout_rate=dropout_rate).to(device=device)
+                         max_len=max_len, dropout_rate=dropout_rate, encoding_type=encoding_type).to(device=device)
     # training parameters
     lr = args.learning_rate
     batch_size = args.batch_size
@@ -84,8 +93,16 @@ def main():
     data_module.prepare_data()
     # create training aids
     optimizer = optim.Adam(params=model.parameters(), lr=lr)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
-    loss_fn = nn.CrossEntropyLoss(ignore_index=data_module.special_tokens['<pad>'])
+    if args.warmup_scheduler:
+        scheduler = WarmupInverseSquareRootScheduler(optimizer, warmup_steps=4000, d_model=args.d_model)
+        print("Warm up scheduler activate!")
+    else:
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+    if args.label_smoothing:
+        loss_fn = LabelSmoothingLoss(label_smoothing=0.1, vocab_size=vocab_size, ignore_index=data_module.special_tokens['<pad>'])
+        print("Smoothign Loss activated!")
+    else:
+        loss_fn = nn.CrossEntropyLoss(ignore_index=data_module.special_tokens['<pad>'])
     # get loaders
     train_loader, valid_loader, _ = data_module.get_dataloaders()
     # creat a trainer object

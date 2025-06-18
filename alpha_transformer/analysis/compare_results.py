@@ -104,13 +104,13 @@ def main():
     print(df_sorted.to_string(index=False))
 
     # create args.save_path if it doesn't exist
-    os.makedirs(args.save_path, exist_ok=True)
+    os.makedirs(os.path.join('analysis', args.save_path), exist_ok=True)
 
-    csv_path = os.path.join(args.save_path, "bleu_scores_summary.csv")
+    csv_path = os.path.join('analysis', args.save_path, "bleu_scores_summary.csv")
     df_sorted.to_csv(csv_path, index=False)
     print(f"[Success] Saved CSV to {csv_path}")
 
-    plot_path = os.path.join(args.save_path, "bleu_scores_enfr.png")
+    plot_path = os.path.join('analysis', args.save_path, "bleu_scores_enfr.png")
     plot_bleu_scores(df_sorted, output_file=plot_path, show_plot=args.show_plot)
 
 if __name__ == '__main__':
