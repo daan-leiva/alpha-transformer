@@ -6,7 +6,7 @@ import argparse
 app = Flask(__name__)
 
 # Global reference to the loaded Trainer object
-trainer = None
+trainers = {}
 
 # Define translation route
 @app.route('/translate', methods=['POST'])
@@ -14,12 +14,18 @@ def translate():
     # parse json request
     data = request.get_json()
     sentences = data.get('text')
+    target_language = data.get('target_language', 'fr')
     decode_type = data.get('decoder_type', 'beam')
     beam_size = int(data.get('beam_size', 5))
-
+    
     # handle missing input
     if not sentences:
         return jsonify({'error': 'no input text provided'}), 400
+    
+    # Choose the correct model
+    trainer = trainers.get(target_language)
+    if not trainer:
+        return jsonify({'error': f"No model available for target language '{target_language}'"}), 400
     
     # ensure sentence is a list
     if isinstance(sentences, str):
@@ -40,19 +46,19 @@ def translate():
 
 # main entry point
 def main():
-    global trainer
+    global trainers
 
     # CLI arguments
     parser = argparse.ArgumentParser(description="Serve translation API from a trained Transformer model.")
-    parser.add_argument("--checkpoint", type=str, required=True,
-                        help="Path to best_model.pt checkpoint")
-
     parser.add_argument("--port", type=int, default=5000,
                         help="Port to run the server on")
     args = parser.parse_args()
 
     # load model and tokenizer from checkpoint
-    trainer = load_checkpoint_and_tokenizer(args.checkpoint)
+    print("Loading models...")
+    trainers['fr'] = load_checkpoint_and_tokenizer("checkpoints/en_fr_large_512_long/best_model.pt")
+    trainers['de'] = load_checkpoint_and_tokenizer("checkpoints/en_de_run1/en_de_small_d128_v16k_20250615_050243/best_model.pt")
+    print("Models loaded.")
 
     # start Flask server
     app.run(host="0.0.0.0", port=args.port)
