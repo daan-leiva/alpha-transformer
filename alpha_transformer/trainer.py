@@ -78,7 +78,7 @@ class Trainer:
             self.log_and_print("-" * 50)
 
         # print cuda availability
-        self.log_and_print("Cuda available: " + str(torch.cuda.is_available()))   
+        self.log_and_print("Cuda available: " + str(torch.cuda.is_available())) 
 
     # UTILITY FUNCTIONS
 

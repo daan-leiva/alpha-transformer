@@ -14,10 +14,13 @@ class SingleAttentionHead(nn.Module):
         mask: (batch_size, 1, seq_len, seq_len)
         """
         # for this project d_k == d_v (and d_q)
-        d_k = Q.shape[-1]
+        #d_k = Q.shape[-1]
 
         # calcualte our attention matrix
-        attention_matrix = torch.matmul(Q, K.transpose(-2, -1))/math.sqrt(d_k) # resulting dimensions = (batch_size, n_heads, seq_len, seq_len)
+        d_k = Q.size(-1)
+        scale = 1.0 / torch.sqrt(torch.tensor(float(d_k), device=Q.device, dtype=Q.dtype))
+         # added this change to support tracing for onnx exporting
+        attention_matrix = torch.matmul(Q, K.transpose(-2, -1))/scale # resulting dimensions = (batch_size, n_heads, seq_len, seq_len)
         # the mask will be used to partially hide inputs during training (look ahead)
         # and for variable input lengths
         if mask is not None:

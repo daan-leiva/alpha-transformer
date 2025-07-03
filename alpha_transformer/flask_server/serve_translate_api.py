@@ -57,7 +57,7 @@ def main():
     # load model and tokenizer from checkpoint
     print("Loading models...")
     trainers['fr'] = load_checkpoint_and_tokenizer("checkpoints/en_fr_large_512_long/best_model.pt")
-    trainers['de'] = load_checkpoint_and_tokenizer("checkpoints/en_de_run1/en_de_small_d128_v16k_20250615_050243/best_model.pt")
+    trainers['de'] = load_checkpoint_and_tokenizer("checkpoints/en_de_run1/en_de_medium_d256_v8k_20250615_050243/best_model.pt")
     print("Models loaded.")
 
     # start Flask server
