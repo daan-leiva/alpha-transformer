@@ -112,3 +112,4 @@ gcp_keys/
 *.tmp
 *.bak
 venv/
+alpha_transformer/transformer.onnx.data
