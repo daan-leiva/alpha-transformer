@@ -3,59 +3,87 @@ from transformer.core.singlehead_attention import SingleAttentionHead
 import torch
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, d_model, n_heads, dropout_rate):
-        super().__init__()
-        # verify that the model dimension can be evenly split amongst the heads
-        assert(d_model%n_heads == 0)
+    """
+    Implements Multi-Head Attention by projecting input queries, keys, and values into
+    multiple heads, performing scaled dot-product attention independently, and then
+    recombining the results into the original dimensionality.
+    """
 
-        # save class variables
-        self.d_k = d_model//n_heads # with d_k == d_q (and in this project also d_k == d_v)
+    def __init__(self, d_model, n_heads, dropout_rate):
+        """
+        Args:
+            d_model (int): Dimensionality of input and output features.
+            n_heads (int): Number of attention heads.
+            dropout_rate (float): Dropout rate used inside each attention head.
+        """
+        super().__init__()
+
+        # Ensure d_model is divisible by number of heads
+        assert d_model % n_heads == 0, "d_model must be divisible by n_heads"
+
+        # === Save configuration ===
         self.d_model = d_model
         self.n_heads = n_heads
+        self.d_k = d_model // n_heads  # Dimensionality per head
 
-        # spread the input into q, k and v variables
-        self.q_projection = nn.Linear(in_features=d_model, out_features=d_model)
-        self.k_projection = nn.Linear(in_features=d_model, out_features=d_model)
-        self.v_projection = nn.Linear(in_features=d_model, out_features=d_model)
+        # === Linear projections for Q, K, V ===
+        self.q_projection = nn.Linear(d_model, d_model)
+        self.k_projection = nn.Linear(d_model, d_model)
+        self.v_projection = nn.Linear(d_model, d_model)
+
+        # === Shared attention logic across all heads ===
         self.single_attention = SingleAttentionHead(dropout_rate=dropout_rate)
-        self.recombination = nn.Linear(in_features=d_model, out_features=d_model)
+
+        # === Output projection to collapse all heads back into d_model ===
+        self.recombination = nn.Linear(d_model, d_model)
 
     def forward(self, Q, K, V, mask=None, past_key_value=None):
-        # get other x dimensions
-        batch_size, src_seq_len, _ = K.shape # get them separate for the case of cross attention
-        batch_size, tgt_seq_len, _ = Q.shape
+        """
+        Args:
+            Q, K, V (Tensor): Shape (batch_size, seq_len, d_model)
+            mask (Tensor, optional): Shape (batch_size, 1, 1, seq_len) or similar
+            past_key_value (tuple, optional): Cached key and value tensors for incremental decoding
 
-        # project X into a bigger space for a later split
-        Q = self.q_projection(Q)
-        K = self.k_projection(K)
-        V = self.v_projection(V)
-        # reshape for single attention
-        # permute dimensions so we perform single attention per head instead of per sequence
+        Returns:
+            output (Tensor): Attention output (batch_size, tgt_seq_len, d_model)
+            attention_weights (Tensor): Attention scores for visualization
+            new_past_key_value (tuple): Updated (K, V) pair for use in next decoding step
+        """
+        batch_size, src_seq_len, _ = K.shape
+        _, tgt_seq_len, _ = Q.shape
+
+        # === Project Q, K, V from input ===
+        Q = self.q_projection(Q)  # (batch_size, tgt_seq_len, d_model)
+        K = self.k_projection(K)  # (batch_size, src_seq_len, d_model)
+        V = self.v_projection(V)  # (batch_size, src_seq_len, d_model)
+
+        # === Reshape and split into heads ===
+        # After reshape: (batch_size, seq_len, n_heads, d_k)
+        # After permute: (batch_size, n_heads, seq_len, d_k)
         Q = Q.reshape(batch_size, tgt_seq_len, self.n_heads, self.d_k).permute(0, 2, 1, 3)
         K = K.reshape(batch_size, src_seq_len, self.n_heads, self.d_k).permute(0, 2, 1, 3)
         V = V.reshape(batch_size, src_seq_len, self.n_heads, self.d_k).permute(0, 2, 1, 3)
 
-        # Concatenate past key/value if they exist
-        # this will be used during inference
-        # only the new seq value will be passed intead of the whole sequence
-        # this will keep all dimensions cohesive
+        # === Concatenate past keys and values if available (for inference) ===
         if past_key_value is not None:
-            past_K, past_V = past_key_value  # Each is (batch_size, n_heads, past_seq_len, d_k)
-            # Concatenate along sequence length dimension (dim=2)
+            past_K, past_V = past_key_value  # Each: (batch_size, n_heads, past_seq_len, d_k)
             K = torch.cat([past_K, K], dim=2)
             V = torch.cat([past_V, V], dim=2)
 
-        # save updated (key, value) for use in following iterations
+        # Save new past key/value for future use in autoregressive decoding
         new_past_key_value = (K, V)
 
-        # perform single attention
-        weighted_value_matrix, weighted_attention_matrix = self.single_attention(Q=Q, K=K, V=V, mask=mask)
+        # === Apply attention across all heads ===
+        # Output: (batch_size, n_heads, tgt_seq_len, d_k)
+        weighted_value_matrix, attention_weights = self.single_attention(Q=Q, K=K, V=V, mask=mask)
 
-        # switch the seq_len dimension back to the second position
+        # === Recombine attention outputs ===
+        # Permute: (batch_size, tgt_seq_len, n_heads, d_k)
         weighted_value_matrix = weighted_value_matrix.permute(0, 2, 1, 3)
-        # combine n_heads and d_k into d_model
+        # Collapse heads: (batch_size, tgt_seq_len, d_model)
         weighted_value_matrix = weighted_value_matrix.reshape(batch_size, tgt_seq_len, self.d_model)
-        # recombine the data through learned weights
+
+        # === Final linear layer ===
         output = self.recombination(weighted_value_matrix)
 
-        return output, weighted_attention_matrix, new_past_key_value
+        return output, attention_weights, new_past_key_value
