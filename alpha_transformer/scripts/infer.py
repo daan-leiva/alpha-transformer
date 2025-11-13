@@ -27,7 +27,6 @@ def load_checkpoint_and_tokenizer(checkpoint_path):
     sp_tokenizer = spm.SentencePieceProcessor()
     sp_tokenizer.load(args.sp_model_path)
     vocab_size = sp_tokenizer.get_piece_size()
-
     # Instantiate model with architecture from saved args
     model = Transformer(
         vocab_size=vocab_size,
