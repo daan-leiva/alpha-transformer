@@ -1,28 +1,52 @@
+"""
+Decoder side of the Transformer model.
+
+This module wraps:
+1. InputEmbedding for token and position embeddings on the target side.
+2. TransformerDecoder, a stack of decoder blocks with self attention and cross attention.
+
+It exposes a single TransformerDecoderModel class that returns decoder hidden states
+and optionally cross attention weights and cached key and value tensors.
+"""
+
 import torch.nn as nn
 from transformer.core.input_embedding import InputEmbedding
 from transformer.decoder.transformer_decoder import TransformerDecoder
 
+
 class TransformerDecoderModel(nn.Module):
     """
-    A Transformer decoder-only model that takes target input tokens and encoder output,
-    and returns decoder hidden states. Used as part of an encoder-decoder Transformer.
+    Transformer decoder model that takes target input tokens and encoder output,
+    and returns decoder hidden states. Used as part of a model with encoder and decoder.
 
-    Components:
-        - InputEmbedding: token + positional embedding
-        - TransformerDecoder: stack of decoder layers (self-attention + cross-attention)
+    Components
+    ----------
+    InputEmbedding
+        Token and positional embedding for the target sequence.
+    TransformerDecoder
+        Stack of decoder layers with self attention, cross attention, and feedforward blocks.
     """
     def __init__(self, vocab_size, d_model, max_len, dropout_rate,
                  encoding_type, n_heads, hidden_ff_d, num_decoder_layers):
         """
-        Args:
-            vocab_size (int): Size of vocabulary (number of unique tokens)
-            d_model (int): Dimensionality of embeddings and model layers
-            max_len (int): Maximum sequence length for positional encoding
-            dropout_rate (float): Dropout rate for regularization
-            encoding_type (str): 'sinusoidal' or 'learnable' positional encoding
-            n_heads (int): Number of attention heads
-            hidden_ff_d (int): Hidden dimension in feedforward sublayer
-            num_decoder_layers (int): Number of stacked decoder blocks
+        Parameters
+        ----------
+        vocab_size : int
+            Size of vocabulary (number of unique tokens).
+        d_model : int
+            Dimensionality of embeddings and model layers.
+        max_len : int
+            Maximum sequence length for positional encoding.
+        dropout_rate : float
+            Dropout rate for regularization.
+        encoding_type : str
+            Positional encoding type, either "sinusoidal" or "learnable".
+        n_heads : int
+            Number of attention heads.
+        hidden_ff_d : int
+            Hidden dimension in the feedforward sublayer.
+        num_decoder_layers : int
+            Number of stacked decoder blocks.
         """
         super().__init__()
 
@@ -47,20 +71,31 @@ class TransformerDecoderModel(nn.Module):
     def forward(self, x, encoder_output, tgt_mask=None, src_mask=None,
                 past_key_values=None, return_attention=False):
         """
-        Forward pass for Transformer decoder model.
+        Forward pass for the Transformer decoder model.
 
-        Args:
-            x (Tensor): Target input tokens (batch_size, tgt_len)
-            encoder_output (Tensor): Encoder output (batch_size, src_len, d_model)
-            tgt_mask (Tensor): Decoder self-attention mask (batch_size, 1, tgt_len, tgt_len)
-            src_mask (Tensor): Cross-attention mask (batch_size, 1, 1, src_len)
-            past_key_values (List[Tuple]): Cached key/value pairs for each decoder layer (used in autoregressive decoding)
-            return_attention (bool): Whether to return attention weights from the final decoder layer
+        Parameters
+        ----------
+        x : Tensor
+            Target input token ids of shape (batch_size, tgt_len).
+        encoder_output : Tensor
+            Encoder output of shape (batch_size, src_len, d_model).
+        tgt_mask : Tensor, optional
+            Decoder self attention mask of shape (batch_size, 1, tgt_len, tgt_len).
+        src_mask : Tensor, optional
+            Cross attention mask of shape (batch_size, 1, 1, src_len).
+        past_key_values : list of tuple, optional
+            Cached key and value pairs for each decoder layer, used in incremental decoding.
+        return_attention : bool
+            If True, returns cross attention weights from the final decoder layer.
 
-        Returns:
-            output (Tensor): Decoder output (batch_size, tgt_len, d_model)
-            updated_past_key_values (List[Tuple]): Updated key/value pairs
-            attention_weights (optional): Cross-attention weights from final decoder layer (if return_attention=True)
+        Returns
+        -------
+        output : Tensor
+            Decoder output of shape (batch_size, tgt_len, d_model).
+        updated_past_key_values : list of tuple
+            Updated key and value pairs to reuse on the next decoding step.
+        attention_weights : Tensor, optional
+            Cross attention weights from the final decoder layer, only if return_attention is True.
         """
         # Convert token IDs to embeddings + positional encodings
         x = self.input_embedding(x)

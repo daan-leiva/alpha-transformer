@@ -6,27 +6,35 @@ from transformer.transformer import Transformer
 from data.translation_data import TranslationData
 import sentencepiece as spm
 
-# ============================
-# Argument Parser
-# ============================
+
 def parse_args():
+    """
+    Parse command line arguments for resuming training.
+
+    Expected usage:
+        python restart_training.py --checkpoint_path path/to/checkpoint.pt
+    """
     parser = argparse.ArgumentParser(description="Resume training from checkpoint")
     parser.add_argument('--checkpoint_path', type=str, required=True,
                         help='Path to the .pt checkpoint to resume from')
     return parser.parse_args()
 
-# ============================
-# Load SentencePiece Tokenizer
-# ============================
 def load_tokenizer(sp_model_path):
+    """
+    Load a SentencePiece tokenizer from a given model path.
+    """
     tokenizer = spm.SentencePieceProcessor()
     tokenizer.load(sp_model_path)
     return tokenizer
 
-# ============================
-# Main Resume Logic
-# ============================
+
 def main():
+    """
+    Main resume logic.
+
+    Reconstructs the model, data module, optimizer, scheduler, and trainer
+    from the saved checkpoint and continues training from the stored epoch.
+    """
     args = parse_args()
 
     # Resolve project root directory dynamically
@@ -110,8 +118,6 @@ def main():
     # Close log file after training
     log_file.close()
 
-# ============================
-# Entry Point
-# ============================
+
 if __name__ == "__main__":
     main()

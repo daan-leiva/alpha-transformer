@@ -2,15 +2,23 @@ import matplotlib.pyplot as plt
 
 class TrainingPlotter:
     """
-    Plots training loss, validation loss, and BLEU scores over epochs.
+    Utility for plotting training loss, validation loss, and BLEU score over epochs.
 
-    Args:
-        training_losses (list of float): Training loss values.
-        val_losses (list of float): Validation loss values.
-        val_bleu_scores (list of float): BLEU scores for validation data.
+    This is used at the end of training to generate a summary figure that is
+    saved alongside checkpoints.
     """
 
     def __init__(self, training_losses, val_losses, val_bleu_scores):
+        """
+        Parameters
+        ----------
+        training_losses : list[float]
+            Training loss per epoch.
+        val_losses : list[float]
+            Validation loss per epoch.
+        val_bleu_scores : list[float]
+            Validation BLEU score per epoch.
+        """
         assert len(training_losses) == len(val_losses) == len(val_bleu_scores), \
             "All metric lists must be of the same length"
         
@@ -20,6 +28,12 @@ class TrainingPlotter:
         self.fig = None
 
     def create_plot(self):
+        """
+        Build the matplotlib figure but do not display or save it.
+
+        Creates a figure with loss curves on the left axis and BLEU scores on
+        a secondary right axis.
+        """
         epochs = range(1, len(self.training_losses) + 1)
 
         fig, ax1 = plt.subplots(figsize=(10, 6))
@@ -42,16 +56,28 @@ class TrainingPlotter:
         self.fig = fig
 
     def plot(self):
-        """Displays the plot (creates it if not already generated)."""
+        """
+        Display the plot in an interactive session.
+
+        If the figure has not been created yet, build it first.
+        """
         if self.fig is None:
             self.create_plot()
         self.fig.tight_layout()
         self.fig.show()
 
-    def save(self, filename='training_curves.png'):
-        """Saves the plot to a file."""
+    def save(self, filename: str = 'training_curves.png'):
+        """
+        Save the plot to disk.
+
+        Parameters
+        ----------
+        filename : str
+            File path where the figure should be saved.
+        """
         if self.fig is None:
             self.create_plot()
         self.fig.tight_layout()
         self.fig.savefig(filename, dpi=300)
-        plt.close(self.fig)  # Free up memory
+        # Close the figure to free resources when running many experiments
+        plt.close(self.fig)

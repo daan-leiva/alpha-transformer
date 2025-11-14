@@ -2,8 +2,16 @@ import sentencepiece as spm
 import os
 import argparse
 
-# === Estimate vocabulary size based on file line count ===
+
 def estimate_vocab_size(file_path):
+    """
+    Estimate a suitable vocabulary size based on line count.
+
+    Assumes the training file alternates between source and target sentences
+    so two lines correspond to one sentence pair.
+
+    Returns one of {8000, 16000, 32000, 50000} by a simple heuristic.
+    """
     line_count = 0
     with open(file_path, 'r', encoding='utf-8') as f:
         for _ in f:
@@ -22,8 +30,22 @@ def estimate_vocab_size(file_path):
     else:
         return 50000
 
-# === Train a SentencePiece tokenizer ===
+
 def train_sentencepiece(input_file, model_prefix, vocab_size=32000, model_type='bpe'):
+    """
+    Train a SentencePiece model on the given input file.
+
+    Parameters
+    ----------
+    input_file : str
+        Text file with one sentence per line.
+    model_prefix : str
+        Prefix for the output .model and .vocab files.
+    vocab_size : int
+        Target vocabulary size.
+    model_type : str
+        One of "bpe" or "unigram".
+    """
     spm.SentencePieceTrainer.train(
         input=input_file,
         model_prefix=model_prefix,
@@ -36,7 +58,7 @@ def train_sentencepiece(input_file, model_prefix, vocab_size=32000, model_type='
     )
     print(f"Trained SentencePiece model: {model_prefix}.model and {model_prefix}.vocab")
 
-# === Main CLI entry point ===
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train SentencePiece model for machine translation")
     parser.add_argument('--lang', type=str, required=True,
@@ -50,7 +72,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    # === Choose input file and output prefix based on language pair ===
+    # Choose input file and output prefix based on language pair
     data_folder = 'data'
     if args.lang == 'en-fr':
         input_file = os.path.join(data_folder, 'train_en_fr.all')
@@ -61,7 +83,7 @@ if __name__ == '__main__':
     else:
         raise ValueError(f"Unsupported language pair: {args.lang}")
 
-    # === Train for multiple vocab sizes if specified ===
+    # Train for multiple vocab sizes if specified
     if args.all_vocab_sizes:
         vocab_sizes = [8000, 16000, 32000]
         for vocab_size in vocab_sizes:

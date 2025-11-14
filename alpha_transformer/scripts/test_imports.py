@@ -2,10 +2,17 @@ from transformer.transformer import Transformer
 from utils import bleu_scorer
 
 def main():
+    """
+    Simple sanity check script.
+
+    Confirms that:
+      transformer.transformer.Transformer can be imported and instantiated
+      utils.bleu_scorer module is importable
+    """
     # Confirm imports succeeded
     print("Successfully imported Transformer and BLEU scorer.")
 
-    # === Instantiate Transformer model with dummy values ===
+    # Instantiate Transformer model with dummy values
     model = Transformer(
         vocab=1000,             # Vocabulary size (dummy value)
         d_model=256,            # Embedding dimension
@@ -20,9 +27,10 @@ def main():
     # Print confirmation of model instantiation
     print("Model instantiated:", model.__class__.__name__)
 
-    # === Confirm BLEU scorer interface is available ===
+    # Confirm BLEU scorer interface is available
     has_bleu = hasattr(bleu_scorer, "calculate_bleu")
     print("BLEU scorer module available:", has_bleu)
+
 
 if __name__ == "__main__":
     main()

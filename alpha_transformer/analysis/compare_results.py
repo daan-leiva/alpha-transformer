@@ -6,18 +6,42 @@ import matplotlib.pyplot as plt
 import argparse
 import sentencepiece as spm
 
-# === Parse metadata from checkpoint directory name ===
+
 def parse_checkpoint_name(name):
-    # Extract language, model size, d_model, and vocab size from folder name using regex
+    """
+    Parse a checkpoint directory name into metadata fields.
+
+    Expected format:
+        en_{fr|de}_{small|medium|large}_d{d_model}_v{vocab_in_k}k
+
+    Returns
+    -------
+    tuple
+        (lang, model_size, d_model, vocab_size) or (None, None, None, None)
+        if the pattern does not match.
+    """
     match = re.match(r"en_(fr|de)_(small|medium|large)_d(\d+)_v(\d+)k", name)
     if match:
         lang, model_size, d_model, vocab_size = match.groups()
         return lang, model_size, int(d_model), int(vocab_size) * 1000
     return None, None, None, None
 
-# === Load results from multiple checkpoints ===
 def load_results(folder, skip_list):
-    # Accumulate all model metadata and scores
+    """
+    Scan a checkpoint root folder and collect BLEU score summaries.
+
+    Parameters
+    ----------
+    folder : str
+        Path with one subfolder per experiment.
+    skip_list : list[str]
+        Checkpoint folder names to skip.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Table with one row per checkpoint that had a best_model.pt file.
+    """
     results = []
 
     for subdir in os.listdir(folder):
@@ -36,16 +60,16 @@ def load_results(folder, skip_list):
             continue
 
         try:
-            # Load checkpoint without using GPU
+            # Load checkpoint on CPU so this script does not require a GPU
             checkpoint = torch.load(model_path, map_location="cpu")
 
-            # Parse metadata from folder name
+            # Parse metadata from folder name and checkpoint fields
             args = checkpoint.get("args", {})
             lang, model_size, d_model, vocab_size = parse_checkpoint_name(subdir)
             bleu_score = checkpoint.get("best_bleu_score", -1)
             epoch = checkpoint.get("epoch", -1)
 
-            # Load vocab size from SentencePiece model
+            # Get actual vocab size from the SentencePiece model
             sp = spm.SentencePieceProcessor()
             sp.load(args['sp_model_path'])
             vocab_size = sp.get_piece_size()
@@ -66,11 +90,24 @@ def load_results(folder, skip_list):
 
     return pd.DataFrame(results)
 
-# === Generate bar plot of BLEU scores ===
+
 def plot_bleu_scores(df: pd.DataFrame, lang: str,
                      output_file=None,
                      show_plot=False):
-    # Sort results by BLEU score for plotting
+    """
+    Create and save a bar plot of BLEU scores.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        DataFrame with at least columns "Path" and "BLEU Score".
+    lang : str
+        Target language code used in the title.
+    output_file : str
+        Path to write the figure.
+    show_plot : bool
+        If True, show the figure interactively.
+    """
     df_sorted = df.sort_values(by="BLEU Score", ascending=False)
 
     # Create bar chart
@@ -86,8 +123,14 @@ def plot_bleu_scores(df: pd.DataFrame, lang: str,
     if show_plot:
         plt.show()
 
-# === CLI Entry Point ===
+
 def main():
+    """
+    Command line entry point.
+
+    Loads all checkpoints under a root folder, produces a CSV summary with
+    BLEU scores, and saves a bar chart for quick comparison.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=str, default="checkpoints",
                         help="Directory with checkpoint subfolders",
@@ -133,6 +176,7 @@ def main():
     plot_bleu_scores(df_sorted, lang=args.lang,
                      output_file=plot_path,
                      show_plot=args.show_plot)
+
 
 # Run if executed directly
 if __name__ == '__main__':

@@ -1,3 +1,14 @@
+"""
+Training, validation, checkpointing, and decoding utilities.
+
+The Trainer class coordinates:
+1. Supervised training with teacher forcing.
+2. Validation with BLEU computation.
+3. Early stopping based on validation BLEU.
+4. Checkpoint saving and loading, including training history.
+5. Greedy and beam search decoding for inference.
+"""
+
 import torch
 from utils.bleu_scorer import BLEUScorer
 import time
@@ -6,40 +17,59 @@ from tqdm import tqdm
 from utils.training_plotter import TrainingPlotter
 import argparse
 import sentencepiece as spm
+from typing import List
+
 
 class Trainer:
-    # Different use cases and required arguments:
-    #
-    # Training requires:
-    #   - model
-    #   - optimizer
-    #   - scheduler
-    #   - loss_fn
-    #   - train_loader
-    #   - val_loader
-    #   - tokenizer (e.g., SentencePieceProcessor)
-    #   - special_tokens (dictionary with pad, sos, eos)
-    #   - args (Namespace or dict with training config)
-    #   - log_file (for logging training output)
-    #
-    # Validation requires:
-    #   - model
-    #   - loss_fn
-    #   - val_loader
-    #   - tokenizer
-    #   - special_tokens
-    #   - args
-    #   - log_file
-    #
-    # Inference requires:
-    #   - model
-    #   - tokenizer
-    #   - special_tokens
-    #   - args
+    """
+    Wraps a Transformer model with training, validation, and inference utilities.
+
+    Usage patterns
+    --------------
+    Training
+        Requires model, optimizer, scheduler, loss_fn, train_loader, val_loader,
+        tokenizer, special_tokens, args, and log_file.
+
+    Validation only
+        Requires model, loss_fn, val_loader, tokenizer, special_tokens, args, and log_file.
+
+    Inference only
+        Requires model, tokenizer, special_tokens, args.
+    """
 
     def __init__(self, model, tokenizer, args=None, special_tokens=None, optimizer=None,
                  scheduler=None, loss_fn=None, train_loader=None,
                  val_loader=None, log_file=None):
+        """
+        Construct a Trainer instance.
+
+        Parameters
+        ----------
+        model : torch.nn.Module
+            Transformer model that exposes encode, decode, and forward.
+        tokenizer : sentencepiece.SentencePieceProcessor or compatible
+            Tokenizer used to map between ids and text, used for BLEU and decoding.
+        args : argparse.Namespace or dict, optional
+            Configuration object with fields such as num_epochs, max_len, save_path, etc.
+            If a dict is given it is converted to a Namespace.
+        special_tokens : dict, optional
+            Mapping from token names to ids, for example
+            {"<pad>": pad_id, "<sos>": sos_id, "<eos>": eos_id}.
+            Required for mask creation and decoding.
+        optimizer : torch.optim.Optimizer, optional
+            Optimizer used during training. Required if you plan to call train.
+        scheduler : torch.optim.lr_scheduler._LRScheduler, optional
+            Learning rate scheduler. Required if you plan to call train.
+        loss_fn : callable, optional
+            Loss function taking (logits, target_ids) and returning a scalar loss.
+            Required for training and validation.
+        train_loader : torch.utils.data.DataLoader, optional
+            Data loader for training batches. Required for train.
+        val_loader : torch.utils.data.DataLoader, optional
+            Data loader for validation batches. Required for train and validate.
+        log_file : file-like object, optional
+            Open file handle used for logging text. If None, logs only go to stdout.
+        """
         self.model = model
         self.optimizer = optimizer
         self.scheduler = scheduler
@@ -47,7 +77,8 @@ class Trainer:
         self.train_loader = train_loader
         self.valid_loader = val_loader
         self.tokenizer = tokenizer
-        # create the bleu scorer using the tokenizer
+
+        # BLEU scorer, only created if we have special tokens
         if special_tokens:
             self.bleu_scorer = BLEUScorer(tokenizer=self.tokenizer,
                                       eos_token_id=special_tokens['<eos>'],
@@ -58,6 +89,7 @@ class Trainer:
             self.args = argparse.Namespace(**args)
         else:
             self.args = args
+
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.log_file = log_file
         self.current_epoch = 0
@@ -70,22 +102,35 @@ class Trainer:
         self.special_tokens=special_tokens
         self.overall_start_time = time.time()
 
-        # print args
+        # log args
         if self.args:
             self.log_and_print("\nParsed Arguments:")
             for key, value in vars(self.args).items():
                 self.log_and_print(f"{key}: {value}")
             self.log_and_print("-" * 50)
 
-        # print cuda availability
+        # log cuda availability
         self.log_and_print("Cuda available: " + str(torch.cuda.is_available())) 
 
     # UTILITY FUNCTIONS
 
-    # creates a padding mask for the source data
-    # src shape : (batch_size, src_len)
     @staticmethod
     def create_src_mask(src, pad_token_id):
+        """
+        Create a padding mask for the source batch.
+
+        Parameters
+        ----------
+        src : torch.Tensor
+            Tensor of shape (batch_size, src_len) with token ids.
+        pad_token_id : int
+            Id of the padding token.
+
+        Returns
+        -------
+        torch.Tensor
+            Mask of shape (batch_size, 1, 1, src_len) where True marks non pad tokens.
+        """
          # Ensure input is a torch.Tensor
         if not isinstance(src, torch.Tensor):
             raise TypeError(f"Expected src to be a torch.Tensor, but got {type(src)}")
@@ -96,11 +141,26 @@ class Trainer:
 
         return (src !=pad_token_id).unsqueeze(1).unsqueeze(1) # (batch_size,1,1,src_len) [broadcasting shape]
 
-    # creata a padding mask for the target data
-    # combines a causal look ahead mask with a padding token mask
-    # tgt shape : (batch_size, targtet_len)
     @staticmethod
     def create_tgt_mask(tgt, pad_token_id):
+        """
+        Create a combined padding and causal mask for the target batch.
+
+        The result only allows each position to attend to previous positions
+        and non pad tokens.
+
+        Parameters
+        ----------
+        tgt : torch.Tensor
+            Tensor of shape (batch_size, tgt_len) with token ids.
+        pad_token_id : int
+            Id of the padding token.
+
+        Returns
+        -------
+        torch.Tensor
+            Mask of shape (batch_size, 1, tgt_len, tgt_len).
+        """
         # Check that tgt is a tensor
         if not isinstance(tgt, torch.Tensor):
             raise TypeError(f"Expected tgt to be a torch.Tensor, but got {type(tgt)}")
@@ -118,6 +178,7 @@ class Trainer:
         causal_mask = torch.tril(torch.ones(tgt_len, tgt_len)).bool().to(tgt.device).unsqueeze(0).unsqueeze(0) # (tgt_len, tgt_len)
         padding_mask = (tgt!=pad_token_id).unsqueeze(1).unsqueeze(1) # (batch_size, 1, 1, tgt_len)
         result = causal_mask & padding_mask # should be of shape (batch, 1, tgt_len, tgt_len)
+
         # verify that the broadcast was done correctly
         assert(result.shape == (tgt.shape[0], 1, tgt_len, tgt_len))
 
@@ -125,6 +186,14 @@ class Trainer:
     
     @staticmethod
     def epoch_time(start_time, end_time):
+        """
+        Compute elapsed time between two timestamps in hours, minutes, and seconds.
+
+        Returns
+        -------
+        tuple of int
+            (hours, minutes, seconds)
+        """
         elapsed_time = end_time - start_time
         elapsed_hours = int(elapsed_time//3600)
         elapsed_mins = int((elapsed_time//3600)//60)
@@ -134,10 +203,28 @@ class Trainer:
 
     @staticmethod
     def estimate_remaining_time(start_time, elapsed_epochs, total_epochs):
+        """
+        Estimate remaining training time based on average epoch duration.
+
+        Parameters
+        ----------
+        start_time : float
+            Timestamp when training started.
+        elapsed_epochs : int
+            Number of epochs already completed.
+        total_epochs : int
+            Total number of planned epochs.
+
+        Returns
+        -------
+        tuple of int
+            (days, hours, minutes, seconds) remaining.
+        """
         elapsed_time = time.time() - start_time
         avg_epoch_time = elapsed_time/elapsed_epochs
         remaining_epochs = total_epochs - elapsed_epochs
         remaining_time = remaining_epochs * avg_epoch_time
+
         SECONDS_IN_MIN = 60
         SECONDS_IN_HOUR = SECONDS_IN_MIN * 60
         SECONDS_IN_DAY = SECONDS_IN_HOUR * 24
@@ -155,6 +242,9 @@ class Trainer:
 
     @staticmethod
     def format_time(days, hours, minutes, seconds):
+        """
+        Format a time duration into a compact string such as 1d 3h 12m 5s.
+        """
         parts = []
         if days > 0:
             parts.append(f'{days}d')
@@ -167,6 +257,13 @@ class Trainer:
         return ' '.join(parts)    
     
     def save_checkpoint(self, path):
+        """
+        Save full training state to a checkpoint file.
+
+        Stored fields:
+        epoch, model, optimizer, scheduler, args, loss history,
+        BLEU history, best BLEU, and special tokens.
+        """
         state = {
             'epoch': self.current_epoch,
             'model_state_dict': self.model.state_dict(),
@@ -182,6 +279,18 @@ class Trainer:
         torch.save(state, path)
 
     def load_checkpoint(self, path, need_optimizer=False, need_scheduler=False):
+        """
+        Load training state from a checkpoint file.
+
+        Parameters
+        ----------
+        path : str
+            Path to a checkpoint created by save_checkpoint.
+        need_optimizer : bool
+            If True, restore optimizer state.
+        need_scheduler : bool
+            If True, restore scheduler state.
+        """
         checkpoint = torch.load(path, map_location=self.device)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         if need_optimizer:
@@ -195,12 +304,16 @@ class Trainer:
         self.best_bleu_score = checkpoint['best_bleu_score']
         self.args = argparse.Namespace(**checkpoint['args'])
         self.special_tokens = checkpoint['special_tokens']
-        # create the bleu scorer based on the special_tokens
+
+        # rebuild BLEU scorer
         self.bleu_scorer = BLEUScorer(tokenizer=self.tokenizer,
                                       eos_token_id=self.special_tokens['<eos>'],
                                       pad_token_id=self.special_tokens['<pad>'])
     
     def log_and_print(self, message):
+        """
+        Print a message to stdout and also write it to the log file if one is set.
+        """
         print(message)
         if self.log_file:
             self.log_file.write(message + '\n')
@@ -208,12 +321,27 @@ class Trainer:
 
     # Train | Validate | Inference
 
-    # one batch step in training
     def train_one_batch(self, src, tgt):
+        """
+        Run a single training step on one batch with teacher forcing.
+
+        Parameters
+        ----------
+        src : torch.Tensor
+            Source batch of shape (batch_size, src_len).
+        tgt : torch.Tensor
+            Target batch of shape (batch_size, tgt_len).
+
+        Returns
+        -------
+        float
+            Scalar training loss for this batch.
+        """
         # check that we have the needed training mode variables
         if self.optimizer is None or self.loss_fn is None:
             self.log_and_print("Trainer was intialized without optimize or loss_fn. Training unavailable")
             return
+        
         # offset the target input/out
         tgt_input = tgt[:, :-1] # skip the last token
         tgt_output = tgt[:, 1:] # skip the first token
@@ -222,13 +350,13 @@ class Trainer:
         src_mask = self.create_src_mask(src, pad_token_id=self.special_tokens['<pad>'])
         tgt_mask = self.create_tgt_mask(tgt_input, pad_token_id=self.special_tokens['<pad>'])
 
-        # forward pass through the model
+        # forward pass
         output = self.model(src=src, tgt=tgt_input, src_mask=src_mask, tgt_mask=tgt_mask)
 
         # clear the gradient
         self.optimizer.zero_grad()
 
-        # reshape outputs
+        # flatten for loss computation
         output = output.reshape(-1, output.shape[-1])
         tgt_output = tgt_output.reshape(-1)
 
@@ -242,13 +370,21 @@ class Trainer:
         self.optimizer.step()
 
         return batch_loss.item()
-    
-    # one batch step in training
+
     def validate_one_batch(self, src, tgt):
+        """
+        Run a single validation step on one batch.
+
+        Returns
+        -------
+        tuple
+            (loss_value, model_output)
+        """
         # check that the correct variables were set for validation
         if self.loss_fn is None:
             self.log_and_print("Trainer was intialized without loss_fn. Validation unavailable")
             return
+        
         # offset the target input/out
         tgt_input = tgt[:, :-1] # skip the last token
         tgt_output = tgt[:, 1:] # skip the first token
@@ -267,23 +403,29 @@ class Trainer:
 
         return batch_loss.item(), output
 
-    # train the model (this includes a validation run)
     def train(self):
-        if self.args is None or self.train_loader is None or \
-        self.valid_loader is None or self.scheduler is None or \
-        self.loss_fn is None or self.optimizer is None:
+        """
+        Full training loop with validation, BLEU tracking, checkpointing, and early stopping.
+        """
+        if (self.args is None or self.train_loader is None
+        or self.valid_loader is None or self.scheduler is None
+        or self.loss_fn is None or self.optimizer is None):
             self.log_and_print("Please set all of the variables if training. Operation canceled")
             return
-        # helper objects
+        
+        # early stopping element, number of epochs and model path
         early_stopping = EarlyStopping(patience=9, min_delta=0.1, mode='max')
         epochs = self.args.num_epochs
         model_path = f'./checkpoints/{self.args.save_path}'
+
         # train loop
         for epoch in range(self.current_epoch, epochs):
             # this aids with saving/loading training state
             self.current_epoch = epoch
+
             # start timer
             epoch_start_time = time.time()
+            
             # train model
             train_epoch_loss = 0
             self.model.train()
@@ -294,9 +436,11 @@ class Trainer:
 
                 # train a single batch
                 train_batch_loss = self.train_one_batch(src=src_batch, tgt=tgt_batch)
+
                 # accumulate loss
                 train_epoch_loss += train_batch_loss
 
+            # validate the dataset
             val_epoch_loss, bleu_score = self.validate()
 
             # calculate aggregate metrics
@@ -313,6 +457,7 @@ class Trainer:
             rem_days, rem_hrs, rem_mins, rem_secs = self.estimate_remaining_time(self.overall_start_time, epoch + 1, epochs)
             elapsed_epoch_time_str = self.format_time(0, elapsed_hours, elapsed_mins, elpased_secs) # pass zero for days
             rem_time_str = self.format_time(rem_days, rem_hrs, rem_mins, rem_secs)
+
             # print epoch summary
             self.log_and_print(f'Epoch {epoch + 1:0{len(str(epochs))}}/{epochs} | Train Loss: {train_epoch_loss:.4f} | Val Loss: {val_epoch_loss:.4f}' +
                 f' | BLEU Score: {bleu_score:.2f} | Time: {elapsed_epoch_time_str} | ETA: {rem_time_str}')
@@ -321,9 +466,11 @@ class Trainer:
             if bleu_score > self.best_bleu_score:
                 self.best_bleu_score = bleu_score
                 self.save_checkpoint(path=f'{model_path}/best_model.pt')
+
             # save every 5 epochs as well
             if epoch%5==0:
                 self.save_checkpoint(path=f'{model_path}/checkpoint_epoch_{epoch}.pt')
+
             # check for early stopping
             if early_stopping.step(metric=bleu_score):
                 self.log_and_print("Early Stopped")
@@ -340,6 +487,14 @@ class Trainer:
         plotter.save(filename=plot_filename)
 
     def validate(self):
+        """
+        Run a full validation pass and compute average loss and corpus BLEU.
+
+        Returns
+        -------
+        tuple
+            (average_validation_loss, corpus_bleu_score)
+        """
         if self.valid_loader is None or self.loss_fn is None:
             raise ValueError("Missing val_loader or loss_fn for validation.")   
         val_loss = 0
@@ -347,6 +502,7 @@ class Trainer:
         all_refs = []
         self.model.eval()
 
+        # disable gradient tracking for validation
         with torch.no_grad():
             for src_batch, tgt_batch in tqdm(self.valid_loader, desc=f" [Validation]", leave=False):
                 src_batch = src_batch.to(self.device)
@@ -365,9 +521,30 @@ class Trainer:
 
         return val_loss, bleu_score
     
-    # expects a torch tensor as an input
     def infer(self, src, decode_type='beam', beam_size=None, return_attention=False):
-        # === Input Checks ===
+        """
+        High level inference entry point.
+
+        Parameters
+        ----------
+        src : torch.Tensor
+            Source batch of shape (batch_size, src_len).
+        decode_type : str
+            Either "beam" or "greedy".
+        beam_size : int or None
+            Beam size when using beam search. If None, the default beam size is used.
+        return_attention : bool
+            If True, also returns attention maps.
+
+        Returns
+        -------
+        tuple
+            If return_attention is False:
+                (decoded_sentences, generated_id_sequences)
+            If return_attention is True:
+                (decoded_sentences, generated_id_sequences, attention_tensor)
+        """
+        # input checks
         if not torch.is_tensor(src):
             raise TypeError(f"`src` must be a torch.Tensor, got {type(src)}")
         if src.ndim != 2:
@@ -377,18 +554,18 @@ class Trainer:
         if beam_size is not None and (not isinstance(beam_size, int) or beam_size <= 0):
             raise ValueError(f"`beam_size` must be a positive integer, got {beam_size}")
         
-        # greedly get sequence ids
+        # greedy decoding
         self.model.eval()
         if decode_type == 'greedy':
             if return_attention:
                 generated_sequences, final_attn = self.greedy_decode(src, return_attention=return_attention)
             else:
                 generated_sequences =  self.greedy_decode(src)
+        # beam deconding
         elif decode_type == 'beam':
             if return_attention:
                 if beam_size:
                     generated_sequences, final_attn = self.beam_search_decode(src, beam_size=beam_size, return_attention=return_attention)
-                    
                 else:
                     generated_sequences, final_attn = self.beam_search_decode(src, return_attention=return_attention)
             else:
@@ -398,6 +575,7 @@ class Trainer:
                     generated_sequences= self.beam_search_decode(src)
         else:
             raise ValueError("Inference decode_type can only be greedy or beam")
+        
         # get the sentences in text
         decoded_sentences = self.decode_ids(id_sequences=generated_sequences)
         if return_attention:
@@ -406,22 +584,49 @@ class Trainer:
             return decoded_sentences, generated_sequences
 
     def decode_ids(self, id_sequences, sos_token='<sos>', eos_token='<eos>', pad_token='<pad>'):
+        """
+        Convert sequences of token ids into text using the SentencePiece tokenizer.
+
+        This method removes the start of sequence and pad tokens and truncates at eos.
+
+        Parameters
+        ----------
+        id_sequences : list or torch.Tensor
+            Batch of sequences, each a list of token ids.
+        sos_token : str
+            Key for the start of sequence token in special_tokens.
+        eos_token : str
+            Key for the end of sequence token in special_tokens.
+        pad_token : str
+            Key for the pad token in special_tokens.
+
+        Returns
+        -------
+        list of str
+            Decoded sentences.
+        """
         # check if the sequences are tensor type
         if isinstance(id_sequences, torch.Tensor):
             # move to cpu for processing
             id_sequences = id_sequences.cpu().tolist()
+
+        # array to store the sentences
         sentences = []
-        # get token id
+
+        # get speacial token ids
         eos_id = self.special_tokens[eos_token]
         sos_id = self.special_tokens[sos_token]
         pad_id = self.special_tokens[pad_token]
+
         # iterate through each sentence in the batch
         for seq in id_sequences:
             # cut off at first eos
             if eos_id in seq:
                 seq = seq[:seq.index(eos_id)]
+
             # remove sos and pad
             seq = [id for id in seq if id not in (sos_id, pad_id)]
+
             # decode
             sentence = self.tokenizer.decode_ids(seq)
             sentences.append(sentence)
@@ -429,11 +634,20 @@ class Trainer:
         return sentences
     
     def greedy_decodeOLD(self, src):
+        """
+        Legacy greedy decoding path, kept for reference and debugging.
+
+        Uses full autoregressive decoding without key value caching.
+        """
         src = src.to(self.device)
         batch_size = src.size(0)
+
+        # get special token is
         sos_token_id = self.special_tokens['<sos>']
         eos_token_id = self.special_tokens['<eos>']
         pad_token_id = self.special_tokens['<pad>']
+
+        # get max length from args
         max_len = self.args.max_len
 
         # start with the <sos> token for each sentene in the batch
@@ -477,10 +691,29 @@ class Trainer:
                     break
 
         return generated
-    
-    # expects a torch tensor as an input
+
     def greedy_decode(self, src, return_attention=False, debug_mode=False):
-        # === Input validation ===
+        """
+        Greedy decoding with encoder caching and optional attention tracking.
+
+        Parameters
+        ----------
+        src : torch.Tensor
+            Source batch of shape (batch_size, src_len).
+        return_attention : bool
+            If True, returns attention tensor grouped by layer.
+        debug_mode : bool
+            If True, prints shapes at key points.
+
+        Returns
+        -------
+        list or tuple
+            If return_attention is False:
+                list of sequences (each is a list of token ids)
+            If return_attention is True:
+                (list_of_sequences, attention_tensor)
+        """
+        # input validation
         if not torch.is_tensor(src):
             raise TypeError(f"`src` must be a torch.Tensor, got {type(src)}")
         if src.ndim != 2:
@@ -488,13 +721,19 @@ class Trainer:
         
         # needed variables
         src = src.to(self.device)
+
+        # extract batch size
         batch_size = src.size(0)
+
+        # get special token ids
         sos_token_id = self.special_tokens['<sos>']
         eos_token_id = self.special_tokens['<eos>']
         pad_token_id = self.special_tokens['<pad>']
+        
+        # get max len from the args
         max_len = self.args.max_len
 
-        # creta the src maks
+        # create the src maks
         src_mask = self.create_src_mask(src, pad_token_id=pad_token_id)
 
         # create a variable for the past key values to reuse
@@ -507,15 +746,19 @@ class Trainer:
         with torch.no_grad():
             # get the encoder output to be reused
             memory = self.model.encode(src=src, src_mask=src_mask)
+
             # start with the <sos> token for each sentence in the batch
             generated = torch.full((batch_size, 1), fill_value=sos_token_id,
                                 dtype=torch.long, device=self.device)
+            
             # to keep track of finished sequences
             # all initialized to false
             finished = torch.zeros(batch_size, dtype=torch.bool, device=self.device)
+
             # keep going until max_len or all have an eos
             for _ in range(max_len):
                 decoder_input = generated[:, -1:]
+
                 # predict logits
                 # shape (batch_size, seq_len, vocab_size)
                 result = self.model.decode(tgt=decoder_input, encoder_output=memory,
@@ -547,45 +790,93 @@ class Trainer:
                 # break out of the loop if all done
                 if finished.all():
                     break
+
          # Convert generated tensor to list of lists of ints
         generated_sequences = [seq.tolist() for seq in generated]
 
         if return_attention:
             if debug_mode:
                 print("attn shape before stack: ", len(attention_matrices), ', ', attention_matrices[0].shape)
+
             # attention shape before processing:
             # len() = steps  tensor_shape = (num_layers, batch_size, num_heads, 1, src_len)
             attention_tensor = torch.stack(attention_matrices, dim=0)
+
             # after stack the shape is (steps|tgt_len, num_layers, batch_size, num_heads, 1, src_len)
             # squeeze singleton out
             attention_tensor = attention_tensor.squeeze(4)
+
             # Final shape after permute: (tgt_len, num_layers, batch_size, num_heads, src_len)
             attention_tensor = attention_tensor.permute(2, 1, 3, 0, 4)
+
             return generated_sequences, attention_tensor
 
         return generated_sequences
     
-    def reorder_past_key_values(self, past_key_values, beam_indices):
+    def reorder_past_key_values(self, past_key_values : list, beam_indices) -> List:
+        """
+        Reorder cached key and value tensors to match new beam ordering.
+
+        Parameters
+        ----------
+        past_key_values : list
+            Cached attention states per layer.
+        beam_indices : torch.Tensor
+            Flattened indices indicating which beams to keep.
+
+        Returns
+        -------
+        list
+            New past_key_values list with states reordered.
+        """
         new_past = []
+
         # iterate each layer
         for layer_past in past_key_values:
             new_layer = []
+
             # then we reorder the list of key,values for that layer 
             for past_state in layer_past:
+
                 # past_state shape: (batch_size * beam_size, n_heads, seq_len, head_dim)
                 # sort the past_keys by beam_indices
                 new_past_state = past_state.index_select(0, beam_indices)
                 new_layer.append(new_past_state)
             new_past.append(tuple(new_layer))
+
         return new_past
 
-    
-    # expects a torch tensor as an input
     @torch.no_grad()
-    def beam_search_decode(self, src, beam_size=5, length_penalty_alpha=2,
-                           repetition_penalty=20,
-                           return_attention=False, debug_mode=False):
-        # === Input validation ===
+    def beam_search_decode(self, src: torch.Tensor, beam_size: int = 5, length_penalty_alpha : int = 2,
+                           repetition_penalty : int = 20,
+                           return_attention : bool = False, debug_mode : bool = False):
+        """
+        Beam search decoding with length normalization and repetition penalty.
+
+        Parameters
+        ----------
+        src : torch.Tensor
+            Source batch of shape (batch_size, src_len).
+        beam_size : int
+            Number of beams per example.
+        length_penalty_alpha : float
+            Power used for length normalization.
+        repetition_penalty : float
+            Penalty factor for repeated tokens.
+        return_attention : bool
+            If True, returns attention maps for the best beam per example.
+        debug_mode : bool
+            If True, prints shapes at key points.
+
+        Returns
+        -------
+        list or tuple
+            If return_attention is False:
+                list of best sequences (token ids) per example.
+            If return_attention is True:
+                (best_sequences, attention_tensor)
+        """
+        # input validation
         if not torch.is_tensor(src):
             raise TypeError(f"`src` must be a torch.Tensor, got {type(src)}")
         if src.ndim != 2:
@@ -593,11 +884,16 @@ class Trainer:
         
         # useful variables
         src = src.to(self.device)
+
+        # extract batch size
         batch_size = src.size(0)
 
+        # get special token ids
         sos_token_id = self.special_tokens['<sos>']
         eos_token_id = self.special_tokens['<eos>']
         pad_token_id = self.special_tokens['<pad>']
+
+        # extract max len from args
         max_len = self.args.max_len
 
         # prepare src
@@ -607,7 +903,7 @@ class Trainer:
             print_done = False
         memory = self.model.encode(src, src_mask=src_mask)
 
-        # repeat for each beam
+        # repeat memory and src mask for each beam
         memory = memory.repeat_interleave(beam_size, dim=0)
         src_mask = src_mask.repeat_interleave(beam_size, dim=0)
 
@@ -659,6 +955,7 @@ class Trainer:
                     past_key_values=past_key_values
                 )
 
+            # get the vocab projections from the model
             vocab_logits = self.model.vocab_projection(decoder_output)
 
             # from the seq_len dimension extract the last token
@@ -753,6 +1050,7 @@ class Trainer:
         # take the values where they are not padded. Sum across the seq length and
         # convert it to a float (returns batch_size, beam_size) obejct
         sequence_lengths = (generated_sequences != pad_token_id).sum(dim=-1).float()
+        
         # reshape beam log probabiliies to (batch_size, beam_size)
         normalized_scores = beam_log_probs.view(batch_size, beam_size) / ((sequence_lengths ** length_penalty_alpha))
         if debug_mode:
@@ -790,7 +1088,7 @@ class Trainer:
             layerwise = list(zip(*all_cross_attn))
 
             # For each layer, concatenate attention matrices across time steps
-            # Each `layer` is a list of tensors of shape (num_heads, batch*beam, 1, src_len) — one per time step
+            # Each `layer` is a list of tensors of shape (num_heads, batch*beam, 1, src_len): one per time step
             # Resulting tensor shape: (batch*beam, num_heads, tgt_len, src_len) for each layer
             stacked = [torch.cat(layer, dim=2) for layer in layerwise]
             if debug_mode:

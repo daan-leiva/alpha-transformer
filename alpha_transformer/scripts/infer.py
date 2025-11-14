@@ -6,18 +6,20 @@ import sentencepiece as spm
 import os
 import json
 
-# ================================
-# Load model checkpoint and tokenizer
-# ================================
+
 def load_checkpoint_and_tokenizer(checkpoint_path):
     """
-    Loads a Transformer model checkpoint along with its tokenizer.
+    Load a Transformer checkpoint and its associated tokenizer.
 
-    Args:
-        checkpoint_path (str): Path to the .pt checkpoint
+    Parameters
+    ----------
+    checkpoint_path : str
+        Path to the saved best_model.pt file.
 
-    Returns:
-        trainer (Trainer): Trainer object with model loaded
+    Returns
+    -------
+    Trainer
+        Trainer instance with model weights loaded and tokenizer attached.
     """
     # Load checkpoint to CPU to avoid device mismatch
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
@@ -27,6 +29,7 @@ def load_checkpoint_and_tokenizer(checkpoint_path):
     sp_tokenizer = spm.SentencePieceProcessor()
     sp_tokenizer.load(args.sp_model_path)
     vocab_size = sp_tokenizer.get_piece_size()
+
     # Instantiate model with architecture from saved args
     model = Transformer(
         vocab_size=vocab_size,
@@ -46,22 +49,30 @@ def load_checkpoint_and_tokenizer(checkpoint_path):
 
     return trainer
 
-# =========================
-# Non-batched inference
-# =========================
 def translate_sentences_non_batched(trainer, sentences, decode_type, beam_size, return_attention=False):
     """
-    Translates a list of sentences one at a time.
+    Translate sentences one by one without padding.
 
-    Args:
-        trainer (Trainer): Loaded trainer with model
-        sentences (List[str]): Sentences to translate
-        decode_type (str): 'beam' or 'greedy'
-        beam_size (int): Beam width for decoding
-        return_attention (bool): Whether to return attention weights
+    This path is useful if you want simple per sentence behavior and more
+    detailed control per example.
 
-    Returns:
-        Tuple: (decoded sentences, input tokens, output tokens, attentions)
+    Parameters
+    ----------
+    trainer : Trainer
+        Trainer with a loaded model and tokenizer.
+    sentences : list[str]
+        Sentences to translate.
+    decode_type : str
+        "beam" or "greedy".
+    beam_size : int
+        Beam width used when decode_type is "beam".
+    return_attention : bool
+        If True, returns cross attention tensors for each sentence.
+
+    Returns
+    -------
+    tuple
+        (decoded_sentences, input_tokens, output_tokens, attentions)
     """
     results, input_tokens, output_tokens, attentions = [], [], [], []
 
@@ -69,6 +80,7 @@ def translate_sentences_non_batched(trainer, sentences, decode_type, beam_size, 
         token_ids = trainer.tokenizer.encode(sentence, out_type=int)
         input_tokens.append([trainer.tokenizer.IdToPiece(id) for id in token_ids])
 
+        # Shape is (1, seq_len) to represent a single batch
         input_tensor = torch.tensor(token_ids).unsqueeze(0).to(trainer.device)  # Add batch dim
 
         if return_attention:
@@ -79,6 +91,7 @@ def translate_sentences_non_batched(trainer, sentences, decode_type, beam_size, 
             decoded_sentence, output_ids = trainer.infer(
                 input_tensor, decode_type=decode_type, beam_size=beam_size)
 
+        # If beam search returns a list of beams, keep only the top beam
         if isinstance(output_ids[0], list):  # Handle beam output
             output_ids = output_ids[0]
 
@@ -87,22 +100,27 @@ def translate_sentences_non_batched(trainer, sentences, decode_type, beam_size, 
 
     return results, input_tokens, output_tokens, attentions
 
-# =========================
-# Batched inference
-# =========================
 def translate_sentences(trainer, sentences, decode_type, beam_size, return_attention=False):
     """
-    Translates a batch of sentences with padding.
+    Translate a batch of sentences with padding.
 
-    Args:
-        trainer (Trainer): Loaded trainer
-        sentences (List[str]): Input text
-        decode_type (str): 'beam' or 'greedy'
-        beam_size (int): Beam width
-        return_attention (bool): Return attention weights if True
+    Parameters
+    ----------
+    trainer : Trainer
+        Trainer instance with model and tokenizer.
+    sentences : list[str] or str
+        Input sentences. A single string will be wrapped in a list.
+    decode_type : str
+        "beam" or "greedy".
+    beam_size : int
+        Beam width for beam search.
+    return_attention : bool
+        If True, also return cross attention tensors.
 
-    Returns:
-        Tuple: (translations, input_tokens, output_tokens, attentions)
+    Returns
+    -------
+    tuple
+        (translations, input_tokens, output_tokens, attentions)
     """
     if isinstance(sentences, str):
         sentences = [sentences]
@@ -110,14 +128,13 @@ def translate_sentences(trainer, sentences, decode_type, beam_size, return_atten
     token_batches = [trainer.tokenizer.encode(s, out_type=int) for s in sentences]
     input_tokens = [[trainer.tokenizer.IdToPiece(id) for id in seq] for seq in token_batches]
 
-    # Pad input sequences to uniform length
+    # Pad sequences so they can be processed as a single batch
     input_tensor = torch.nn.utils.rnn.pad_sequence(
         [torch.tensor(seq, dtype=torch.long) for seq in token_batches],
         batch_first=True,
         padding_value=trainer.special_tokens['<pad>']
     ).to(trainer.device)
 
-    # Perform inference
     if return_attention:
         results, output_ids, attentions = trainer.infer(
             input_tensor, decode_type=decode_type, beam_size=beam_size, return_attention=True)
@@ -127,12 +144,19 @@ def translate_sentences(trainer, sentences, decode_type, beam_size, return_atten
         attentions = None
 
     output_tokens = [[trainer.tokenizer.IdToPiece(id) for id in seq] for seq in output_ids]
+
     return results, input_tokens, output_tokens, attentions
 
-# ================================
-# Main CLI utility
-# ================================
+
 def main():
+    """
+    Command line translation helper.
+
+    Example usages:
+        python infer.py --checkpoint path/to/best_model.pt --text "Hello"
+        python infer.py --checkpoint path/to/best_model.pt --input_file input.txt
+                        --output_file output.txt
+    """
     parser = argparse.ArgumentParser(description="Run inference using a trained Transformer model.")
     parser.add_argument('--checkpoint', type=str, required=True,
                         help='Path to best_model.pt checkpoint')
@@ -176,6 +200,6 @@ def main():
             print(f"Input: {sentence}")
             print(f"Output: {translation}\n")
 
-# Entry point
+
 if __name__ == '__main__':
     main()

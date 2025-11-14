@@ -3,37 +3,45 @@ from transformer.core.multihead_attention import MultiHeadAttention
 
 class TransformerDecoderBlock(nn.Module):
     """
-    Implements a single decoder block for the Transformer model.
-    Includes:
-        - masked self-attention
-        - cross-attention over encoder output
-        - position-wise feedforward network
-        - residual connections and layer normalization
+    Single decoder block for the Transformer model.
+
+    The block contains:
+      masked self attention over the decoder input
+      cross attention over encoder outputs
+      positionwise feedforward network
+      residual connections and layer normalization around each sublayer
+
+    It also supports cached keys and values in the self attention sublayer
+    to enable efficient autoregressive decoding.
     """
 
     def __init__(self, d_model, n_heads, dropout_rate, hidden_ff_d):
         """
-        Args:
-            d_model (int): Dimensionality of model embeddings
-            n_heads (int): Number of attention heads
-            dropout_rate (float): Dropout rate
-            hidden_ff_d (int): Hidden dimension of the feedforward sublayer
+        Parameters
+        ----------
+        d_model : int
+            Dimensionality of model embeddings.
+        n_heads : int
+            Number of attention heads.
+        dropout_rate : float
+            Dropout probability.
+        hidden_ff_d : int
+            Hidden dimension of the feedforward sublayer.
         """
         super().__init__()
 
-        # --- Self-Attention Block ---
+        # Self attention block on the decoder side
         self.self_attention = MultiHeadAttention(d_model=d_model, n_heads=n_heads, dropout_rate=dropout_rate)
         self.norm1 = nn.LayerNorm(normalized_shape=d_model)
         self.dropout1 = nn.Dropout(dropout_rate)
 
-        # --- Cross-Attention Block ---
-        # Q comes from decoder, K and V from encoder output
+        # Cross attention block where queries come from the decoder and
+        # keys and values come from the encoder output
         self.cross_attention = MultiHeadAttention(d_model=d_model, n_heads=n_heads, dropout_rate=dropout_rate)
         self.norm2 = nn.LayerNorm(normalized_shape=d_model)
         self.dropout2 = nn.Dropout(dropout_rate)
 
-        # --- Feedforward Block ---
-        # Applies two linear layers with ReLU activation and dropout in between
+        # Positionwise feedforward network
         self.feedforward = nn.Sequential(
             nn.Linear(d_model, hidden_ff_d),
             nn.ReLU(),
@@ -48,33 +56,48 @@ class TransformerDecoderBlock(nn.Module):
         """
         Forward pass through the decoder block.
 
-        Args:
-            x (Tensor): Input tensor (batch_size, tgt_len, d_model)
-            encoder_output (Tensor): Output from encoder (batch_size, src_len, d_model)
-            tgt_mask (Tensor): Mask for decoder self-attention (batch_size, 1, tgt_len, tgt_len)
-            src_mask (Tensor): Mask for encoder-decoder attention (batch_size, 1, 1, src_len)
-            past_key_value (Tuple): Optional tuple of cached (K, V) from previous decoding step
-            return_attention (bool): Whether to return attention weights from cross-attention
+        Parameters
+        ----------
+        x : Tensor
+            Decoder input of shape (batch_size, tgt_len, d_model).
+        encoder_output : Tensor
+            Encoder output of shape (batch_size, src_len, d_model).
+        tgt_mask : Tensor, optional
+            Mask for decoder self attention of shape
+            (batch_size, 1, tgt_len, tgt_len). Typically combines a causal
+            mask with padding masks.
+        src_mask : Tensor, optional
+            Mask for cross attention of shape (batch_size, 1, 1, src_len).
+            Positions with value 0 are excluded from attention.
+        past_key_value : tuple(Tensor, Tensor), optional
+            Cached self attention key and value from previous decoding steps.
+            Each tensor has shape (batch_size, n_heads, past_len, d_k).
+        return_attention : bool
+            If True, also returns cross attention weights.
 
-        Returns:
-            x (Tensor): Output after decoder block (batch_size, tgt_len, d_model)
-            new_past_key_value (Tuple): Cached (K, V) from self-attention for use in autoregressive decoding
-            weighted_attention_matrix (Tensor, optional): Cross-attention weights if requested
+        Returns
+        -------
+        x : Tensor
+            Output after the decoder block of shape (batch_size, tgt_len, d_model).
+        new_past_key_value : tuple(Tensor, Tensor)
+            Updated cached self attention key and value to use in the next step.
+        weighted_attention_matrix : Tensor, optional
+            Cross attention weights of shape
+            (batch_size, n_heads, tgt_len, src_len) if return_attention is True.
         """
-
-        # --- Masked Self-Attention + Residual ---
+        # Masked self attention with optional cached K and V for autoregressive decoding
         self_attn_output, _, new_past_key_value = self.self_attention(
             Q=x, K=x, V=x, mask=tgt_mask, past_key_value=past_key_value
         )
         x = self.norm1(x + self.dropout1(self_attn_output))
 
-        # --- Cross-Attention (Decoder-Encoder) + Residual ---
+        # Cross attention over encoder outputs, used for source to target alignment
         cross_attn_output, weighted_attention_matrix, _ = self.cross_attention(
             Q=x, K=encoder_output, V=encoder_output, mask=src_mask
         )
         x = self.norm2(x + self.dropout2(cross_attn_output))
 
-        # --- Feedforward Network + Residual ---
+        # Positionwise feedforward sublayer
         ff_output = self.feedforward(x)
         x = self.norm3(x + self.dropout3(ff_output))
 
