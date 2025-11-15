@@ -14,6 +14,7 @@ class WarmupInverseSquareRootScheduler(torch.optim.lr_scheduler._LRScheduler):
     During the first warmup_steps updates the learning rate increases linearly.
     After warmup it decays in proportion to step ** (-0.5).
     """
+    
     def __init__(self, optimizer, warmup_steps, d_model, last_epoch=-1):
         """
         Parameters

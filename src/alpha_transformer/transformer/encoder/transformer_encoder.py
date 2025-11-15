@@ -1,5 +1,6 @@
 import torch.nn as nn
-from transformer.encoder.encoder_block import TransformerEncoderBlock
+from alpha_transformer.transformer.encoder.encoder_block import TransformerEncoderBlock
+
 
 class TransformerEncoder(nn.Module):
     """

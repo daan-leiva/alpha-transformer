@@ -10,8 +10,8 @@ and optionally cross attention weights and cached key and value tensors.
 """
 
 import torch.nn as nn
-from transformer.core.input_embedding import InputEmbedding
-from transformer.decoder.transformer_decoder import TransformerDecoder
+from alpha_transformer.transformer.core.input_embedding import InputEmbedding
+from alpha_transformer.transformer.decoder.transformer_decoder import TransformerDecoder
 
 
 class TransformerDecoderModel(nn.Module):

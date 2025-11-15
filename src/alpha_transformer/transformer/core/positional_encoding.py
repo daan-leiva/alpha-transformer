@@ -69,7 +69,6 @@ class SinusoidalPositionalEncoding(nn.Module):
             Tensor of the same shape as x with positional encodings added.
         """
         seq_len = x.size(1)
-        
         return x + self.positional_encoding[:, :seq_len, :]
 
 class LearnablePositionalEncoding(nn.Module):

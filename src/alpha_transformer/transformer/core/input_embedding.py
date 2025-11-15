@@ -1,5 +1,5 @@
 import torch.nn as nn
-from transformer.core.positional_encoding import SinusoidalPositionalEncoding, LearnablePositionalEncoding
+from alpha_transformer.transformer.core.positional_encoding import SinusoidalPositionalEncoding, LearnablePositionalEncoding
 import math
 
 class InputEmbedding(nn.Module):

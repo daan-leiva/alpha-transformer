@@ -1,5 +1,5 @@
-from transformer.transformer import Transformer
-from utils import bleu_scorer
+from alpha_transformer.transformer.transformer import Transformer
+from alpha_transformer.utils import bleu_scorer
 
 def main():
     """

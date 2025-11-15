@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch
-from transformer.decoder.decoder_block import TransformerDecoderBlock
+from alpha_transformer.transformer.decoder.decoder_block import TransformerDecoderBlock
+
 
 class TransformerDecoder(nn.Module):
     """
@@ -78,7 +79,7 @@ class TransformerDecoder(nn.Module):
 
         # Pass input through each decoder layer
         for i, layer in enumerate(self.layers):
-            # Retrieve cached past key and value if available for this layer
+            # Retrieve cached past key/values if available
             past_key_value = past_key_values[i] if past_key_values is not None else None
 
             if return_attention:
@@ -103,11 +104,10 @@ class TransformerDecoder(nn.Module):
 
             updated_key_values.append(new_kv)
 
-        # Apply final normalization across the model dimension
+        # Apply final normalization
         x = self.norm(x)
 
         if return_attention:
-            # Stack attention matrices from all layers for downstream visualization
             # Shape: (num_layers, batch_size, n_heads, tgt_len, src_len)
             weighted_attention_matrix = torch.stack(weighted_attention_matrix, dim=0)
             return x, updated_key_values, weighted_attention_matrix

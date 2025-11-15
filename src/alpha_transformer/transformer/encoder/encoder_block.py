@@ -1,5 +1,6 @@
 import torch.nn as nn
-from transformer.core.multihead_attention import MultiHeadAttention
+from alpha_transformer.transformer.core.multihead_attention import MultiHeadAttention
+
 
 class TransformerEncoderBlock(nn.Module):
     """

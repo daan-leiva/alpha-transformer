@@ -13,14 +13,14 @@ This script:
 import torch
 import torch.nn as nn
 from torch import optim
-from transformer.transformer import Transformer
-from data.translation_data import TranslationData
-from transformer.label_smoothing_loss import LabelSmoothingLoss
-from transformer.warm_up_inverse_scheduler import WarmupInverseSquareRootScheduler
+from alpha_transformer.transformer.transformer import Transformer
+from alpha_transformer.data.translation_data import TranslationData
+from alpha_transformer.transformer.label_smoothing_loss import LabelSmoothingLoss
+from alpha_transformer.transformer.warm_up_inverse_scheduler import WarmupInverseSquareRootScheduler
+from alpha_transformer.trainer  import Trainer
 import argparse
 import os
 import datetime
-from trainer import Trainer
 import sentencepiece as spm
 
 
@@ -105,10 +105,13 @@ def main():
     """
     # get arguments
     args = parse_args()
+
     # model path
     model_path = f'./checkpoints/{args.save_path}'
+
     # create save data file if it doesn't exist
     os.makedirs(model_path, exist_ok=True)
+    
     # create a log file path
     log_file_path = f'{model_path}/train_log.txt'
     log_file = open(log_file_path, 'w')

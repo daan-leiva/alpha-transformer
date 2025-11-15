@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from scripts.infer import load_checkpoint_and_tokenizer, translate_sentences_non_batched
+from alpha_transformer.scripts.infer import load_checkpoint_and_tokenizer, translate_sentences_non_batched
 import argparse
 
 # Initialize Flask app

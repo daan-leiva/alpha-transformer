@@ -7,24 +7,31 @@ __pycache__/
 *.pyd
 *.pkl
 
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
 # Virtual environments
 .venv/
 venv/
 env/
 ENV/
 
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints/
-
-# IDE/editor files
+# IDE / editor files
 .vscode/
 .idea/
 *.swp
 
-# Byte-compiled / cache
-__pycache__/
-*.py[cod]
+# Byte compiled / cache
 *$py.class
+
+# --------------------------------------
+# Packaging / build artifacts
+# --------------------------------------
+dist/
+build/
+*.egg
+*.egg-info/
+.eggs/
 
 # --------------------------------------
 # Data files
@@ -43,27 +50,22 @@ __pycache__/
 *.tar
 *.gz
 
-# Hugging Face datasets cache
+# Hugging Face datasets cache (local)
 ~/.cache/huggingface/
 ~/.datasets_cache/
 ~/.huggingface/
 
 # Hugging Face tokenizers
-*.json
 *.tokenizer
 
-# Dataset files (local)
+# Dataset files (local, root level)
 data/
 datasets/
 corpus/
 *.en
 *.de
 *.fr
-*.all    # <--- Add this to ignore .all files
-
-# Parquet or other large file formats
-*.parquet
-*.hdf5
+*.all
 
 # --------------------------------------
 # Model files and checkpoints
@@ -77,19 +79,19 @@ output/
 *.pth
 *.bin
 *.onnx
+*.onnx.data
 
 # SentencePiece models
 *.model
 *.vocab
 
-# BLEU evaluation outputs
+# BLEU evaluation outputs (raw)
 bleu_scores/
 *.sacrebleu
 *.bleu
 *.eval
 
 # TensorBoard logs
-logs/
 events.out.tfevents.*
 
 # --------------------------------------
@@ -97,13 +99,16 @@ events.out.tfevents.*
 # --------------------------------------
 .env
 .env.*
+
+# OS junk
 .DS_Store
 
 # --------------------------------------
-# Cloud config files (optional)
+# Cloud config files
 # --------------------------------------
 gcp_keys/
-*.json  # GCP service account keys
+# If we ever add service account keys, keep them out of git
+# *.json  # uncomment only if you are sure you never track json configs
 
 # --------------------------------------
 # Miscellaneous
@@ -111,5 +116,6 @@ gcp_keys/
 *.log
 *.tmp
 *.bak
-venv/
-alpha_transformer/transformer.onnx.data
+
+# Project specific
+artifacts/

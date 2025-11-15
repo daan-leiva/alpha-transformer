@@ -1,10 +1,8 @@
 import torch
 import argparse
-from trainer import Trainer
-from transformer.transformer import Transformer
+from alpha_transformer.trainer import Trainer
+from alpha_transformer.transformer.transformer import Transformer
 import sentencepiece as spm
-import os
-import json
 
 
 def load_checkpoint_and_tokenizer(checkpoint_path):
@@ -48,6 +46,7 @@ def load_checkpoint_and_tokenizer(checkpoint_path):
     trainer.load_checkpoint(checkpoint_path)
 
     return trainer
+
 
 def translate_sentences_non_batched(trainer, sentences, decode_type, beam_size, return_attention=False):
     """
@@ -99,6 +98,7 @@ def translate_sentences_non_batched(trainer, sentences, decode_type, beam_size, 
         results.append(decoded_sentence)
 
     return results, input_tokens, output_tokens, attentions
+
 
 def translate_sentences(trainer, sentences, decode_type, beam_size, return_attention=False):
     """

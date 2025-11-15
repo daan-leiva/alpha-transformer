@@ -1,5 +1,0 @@
-checkpoints
-data
-scripts
-transformer
-utils

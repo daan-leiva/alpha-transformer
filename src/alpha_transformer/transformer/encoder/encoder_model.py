@@ -9,8 +9,8 @@ It exposes a single TransformerEncoderModel class that returns encoder hidden st
 """
 
 import torch.nn as nn
-from transformer.core.input_embedding import InputEmbedding
-from transformer.encoder.transformer_encoder import TransformerEncoder
+from alpha_transformer.transformer.core.input_embedding import InputEmbedding
+from alpha_transformer.transformer.encoder.transformer_encoder import TransformerEncoder
 
 
 class TransformerEncoderModel(nn.Module):

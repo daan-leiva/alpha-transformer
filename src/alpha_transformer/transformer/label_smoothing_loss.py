@@ -52,31 +52,22 @@ class LabelSmoothingLoss(nn.Module):
         Tensor
             Scalar loss value averaged over non ignored positions.
         """
-        # Flatten predictions and targets so that we operate on a simple
-        # (num_tokens, vocab_size) view
+        # Flatten predictions and targets
         pred = pred.view(-1, self.vocab_size)
         target = target.view(-1)
 
         # Create smoothed target distributions
         with torch.no_grad():
-            # Start from a uniform distribution over incorrect classes
-            true_dist = torch.full_like(pred, self.ε / (self.vocab_size - 1))
-
-            # Positions that should contribute to the loss
+            true_dist = torch.full_like(pred, self.ε / (self.vocab_size - 1))  # Uniform distribution
             mask = target != self.ignore_index
+            true_dist.scatter_(1, target.unsqueeze(1), 1.0 - self.ε)           # Assign 1 - ε to correct class
+            true_dist[~mask] = 0                                               # Zero out ignored positions
 
-            # Put most of the probability mass on the correct class
-            true_dist.scatter_(1, target.unsqueeze(1), 1.0 - self.ε)
-
-            # Completely zero out rows that correspond to ignored tokens
-            true_dist[~mask] = 0
-
-        # Convert logits to log probabilities
+        # Compute log-probabilities
         log_probs = F.log_softmax(pred, dim=-1)
 
-        # Cross entropy between smoothed labels and log probabilities
-        # Result shape: (num_tokens,)
+        # Cross-entropy between log_probs and smoothed labels
         loss = -(true_dist * log_probs).sum(dim=1)
 
-        # Average only over non ignored tokens
+        # Return mean loss over non-ignored tokens
         return loss[mask].mean()

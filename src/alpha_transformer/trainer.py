@@ -10,11 +10,11 @@ The Trainer class coordinates:
 """
 
 import torch
-from utils.bleu_scorer import BLEUScorer
+from alpha_transformer.utils.bleu_scorer import BLEUScorer
 import time
-from utils.early_stopping import EarlyStopping
+from alpha_transformer.utils.early_stopping import EarlyStopping
 from tqdm import tqdm
-from utils.training_plotter import TrainingPlotter
+from alpha_transformer.utils.training_plotter import TrainingPlotter
 import argparse
 import sentencepiece as spm
 from typing import List

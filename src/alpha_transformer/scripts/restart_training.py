@@ -1,9 +1,9 @@
 import torch
 import os
-from trainer import Trainer
 import argparse
-from transformer.transformer import Transformer
-from data.translation_data import TranslationData
+from alpha_transformer.transformer.transformer import Transformer
+from alpha_transformer.data.translation_data import TranslationData
+from alpha_transformer.trainer import Trainer
 import sentencepiece as spm
 
 
@@ -53,7 +53,9 @@ def main():
     sp_model_path = os.path.join(root_dir, saved_args['sp_model_path'])
     tokenizer = load_tokenizer(sp_model_path=sp_model_path)
 
+    # ============================
     # Rebuild Model from Args
+    # ============================
     model = Transformer(
         vocab=tokenizer.get_piece_size(),
         d_model=saved_args['d_model'],
@@ -65,7 +67,9 @@ def main():
         num_decoder_layers=saved_args['num_layers']
     ).to(device)
 
+    # ============================
     # Rebuild Data Module
+    # ============================
     data = TranslationData(
         src_lang=saved_args['src_lang'],
         tgt_lang=saved_args['tgt_lang'],
@@ -77,17 +81,23 @@ def main():
     data.prepare_data()
     train_loader, val_loader, _ = data.get_dataloaders()
 
+    # ============================
     # Rebuild Optimizer and Scheduler
+    # ============================
     optimizer = torch.optim.Adam(model.parameters(), lr=saved_args['learning_rate'])
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
 
+    # ============================
     # Loss Function
+    # ============================
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=data.special_tokens['<pad>'])
 
     # Open a resume training log file in append mode
     log_file = open(os.path.join(save_dir, "resume_training_log.txt"), "a")
 
+    # ============================
     # Rebuild Trainer and Load State
+    # ============================
     trainer = Trainer(
         model=model,
         tokenizer=tokenizer,

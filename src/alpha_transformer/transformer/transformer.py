@@ -8,8 +8,8 @@ This module exposes a single Transformer class that:
 """
 
 import torch.nn as nn
-from transformer.encoder.encoder_model import TransformerEncoderModel
-from transformer.decoder.decoder_model import TransformerDecoderModel
+from alpha_transformer.transformer.encoder.encoder_model import TransformerEncoderModel
+from alpha_transformer.transformer.decoder.decoder_model import TransformerDecoderModel
 
 
 class Transformer(nn.Module):

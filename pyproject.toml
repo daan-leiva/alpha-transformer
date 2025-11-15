@@ -1,11 +1,57 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "alpha_transformer"
-version = "0.1.0"
-dependencies = []
+name = "alpha-transformer"
+version = "0.2.0"
+description = "From scratch Transformer NMT models (EN to FR and EN to DE) with a Flask translation API"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  { name = "Daan Leiva" }
+]
+
+dependencies = [
+  "torch==2.7.1",
+  "torchvision==0.22.1",
+  "datasets==3.6.0",
+  "sentencepiece==0.2.0",
+  "Flask==3.1.1",
+  "sacrebleu==2.5.1",
+  "matplotlib==3.10.3",
+  "pandas==2.2.3",
+  "numpy==2.2.6",
+  "huggingface-hub==0.32.3",
+  "spacy==3.8.7",
+  "en-core-web-sm==3.8.0",
+  "fr-core-news-sm==3.8.0",
+  "nl-core-news-sm==3.8.0",
+  "tqdm==4.67.1",
+  "rich==13.9.4",
+  "pydantic==2.11.5",
+  "typer==0.16.0",
+  "safetensors==0.5.3",
+  "onnx==1.18.0",
+  "onnxruntime==1.22.0",
+  "onnxscript==0.3.0",
+  "pyarrow==20.0.0"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
-where = ["alpha_transformer"]
+where = ["src"]
+include = ["alpha_transformer*"]
+
+[project.scripts]
+alpha_transformer_serve = "alpha_transformer.flask_server.serve_translate_api:main"
+alpha_transformer_infer = "alpha_transformer.scripts.infer:main"
+
+[project.optional-dependencies]
+dev = [
+  "jupyterlab",
+  "ipykernel",
+  "netron",
+]

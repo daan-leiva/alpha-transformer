@@ -9,7 +9,7 @@ This module:
 """
 
 import torch.nn as nn
-from transformer.core.singlehead_attention import SingleAttentionHead
+from alpha_transformer.transformer.core.singlehead_attention import SingleAttentionHead
 import torch
 
 
